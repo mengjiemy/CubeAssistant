@@ -42,8 +42,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RAW=$(tail -120 build.log | sed 's/\x1b\[[0-9;]*m//g')
-          gh issue create --title "CI build failed ($(date +%s))" --body "$(printf 'Build log tail:\n\n```\n%s\n```\n\nLog total bytes: %s' "$RAW" "$(wc -c < build.log)")"
+          RAW=$(grep -iE "error:|error generated|fatal error|BUILD FAILED|provisioning|does not contain|cannot be found|no such module|no such file|No such" build.log | sed 's/\x1b\[[0-9;]*m//g' | head -60)
+          if [ -z "$RAW" ]; then RAW=$(tail -100 build.log | sed 's/\x1b\[[0-9;]*m//g'); fi
+          gh issue create --title "CI build failed $(date +%s)" --body "$(printf 'Filtered errors:\n\n```\n%s\n```\nLog total bytes: %s' "$RAW" "$(wc -c < build.log)")"
 
       - name: Package unsigned IPA
         if: steps.build.outcome == 'success'
