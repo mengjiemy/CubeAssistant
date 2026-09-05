@@ -76,10 +76,10 @@ jobs:
             sleep 2
             echo "=== launching mode=$mode ==="
             # console-pty 输出 app stdout/stderr 到日志，方便回传诊断
-            timeout 12 xcrun simctl launch --console-pty "$UDID" com.jiege.CubeAssistant --preview "$mode" >"/tmp/console_${mode}.log" 2>&1 &
+            # macOS runner 无 GNU timeout，用 perl alarm 实现
+            (perl -e 'alarm shift; exec @ARGV or die "exec: $!"' 12 xcrun simctl launch --console-pty "$UDID" com.jiege.CubeAssistant --preview "$mode" >"/tmp/console_${mode}.log" 2>&1) &
             CONSOLE_PID=$!
-            sleep 8
-            # app 是否还在 running？
+            sleep 9
             RUNNING=$(xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -c "com.jiege.CubeAssistant" || echo 0)
             echo "running=$RUNNING"
             xcrun simctl io "$UDID" screenshot "/tmp/shots/prev_${mode}.png"
