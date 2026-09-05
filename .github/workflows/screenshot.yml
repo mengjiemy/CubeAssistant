@@ -56,7 +56,7 @@ jobs:
           if [ -f "$APP/Assets.car" ]; then echo "Assets.car present"; else echo "WARN no Assets.car"; fi
           echo "APP_OK"
 
-      # 关键：本 step 永不 fail，全程把诊断写进 _diag.txt，靠 preview 分支回显
+      # 全程诊断写 _diag.txt，本 step 结尾强制 exit 0（永不 fail）
       - name: Boot simulator + install + screenshots
         if: steps.verify.outcome == 'success'
         run: |
@@ -102,18 +102,24 @@ jobs:
           done
           xcrun simctl shutdown "$UDID" 2>/dev/null
           xcrun simctl delete "$UDID" 2>/dev/null
+          exit 0
 
-      - name: Commit previews back to preview branch (viewable without token)
+      # 用 issue 回显诊断（唯一确认可读的通道），同时尝试把图推 preview 分支
+      - name: Report diagnostics via issue
         if: always()
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          echo "=== _diag.txt 内容 ==="
+          cat /tmp/shots/_diag.txt 2>/dev/null || echo "(no diag)"
+          echo "=== 回显到 issue ==="
+          cat /tmp/shots/_diag.txt 2>/dev/null | gh issue create --title "Preview diag $(date +%s)" --body-file - 2>&1 | tail -3
+          echo "=== 尝试把图推 preview 分支 ==="
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/mengjiemy/CubeAssistant.git
           mkdir -p preview
           cp /tmp/shots/*.png preview/ 2>/dev/null || true
           cp /tmp/shots/_diag.txt preview/ 2>/dev/null || true
           git add preview/ || true
-          git commit -m "chore: simulator previews [skip ci]" --allow-empty || echo "no changes to commit"
-          git push origin HEAD:preview --force || echo "push preview failed"
+          git commit -m "chore: simulator previews [skip ci]" --allow-empty || echo "no changes"
+          git push origin HEAD:preview --force 2>&1 | tail -3 || echo "push preview failed"
