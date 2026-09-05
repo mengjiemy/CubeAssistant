@@ -1,0 +1,85 @@
+name: Simulator Preview Screenshots
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode / available runtimes
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes
+
+      - name: Flatten Swift sources to match Xcode project group paths
+        run: |
+          for d in Engine Models Views; do
+            if [ -d "CubeAssistant/$d" ]; then cp CubeAssistant/$d/*.swift CubeAssistant/ 2>/dev/null || true; fi
+          done
+          echo "swift files in CubeAssistant/: $(ls CubeAssistant/*.swift | wc -l)"
+
+      - name: Build for iOS Simulator (no code signing)
+        id: build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project CubeAssistant.xcodeproj \
+            -target CubeAssistant \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee sim.log
+
+      - name: Report build error to issue
+        if: steps.build.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RAW=$(grep -iE "error:|error generated|fatal error|BUILD FAILED|cannot be found|no such module|no such file" sim.log | sed 's/\x1b\[[0-9;]*m//g' | head -60)
+          [ -z "$RAW" ] && RAW=$(tail -80 sim.log | sed 's/\x1b\[[0-9;]*m//g')
+          gh issue create --title "Preview build failed $(date +%s)" --body "$(printf '```\n%s\n```', "$RAW")"
+
+      - name: Boot simulator, install app, capture screenshots
+        if: steps.build.outcome == 'success'
+        run: |
+          set -e
+          APP=$(find "$PWD/build" -name "CubeAssistant.app" -maxdepth 4 -type d | head -1)
+          echo "APP=$APP"; [ -z "$APP" ] && exit 1
+          RUNTIME=$(xcrun simctl list runtimes -j | /usr/bin/python3 -c "import sys,json;r=json.load(sys.stdin)['runtimes'];ios=[x for x in r if 'iOS' in x['name']];print(ios[-1]['identifier'])")
+          echo "RUNTIME=$RUNTIME"
+          UDID=$(xcrun simctl create CubePrev "iPhone 17 Pro" "$RUNTIME")
+          echo "UDID=$UDID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl install "$UDID" "$APP"
+          mkdir -p /tmp/shots
+          for mode in home scramble solve scan history; do
+            if [ "$mode" = "home" ]; then
+              xcrun simctl launch "$UDID" com.jiege.CubeAssistant
+            else
+              xcrun simctl launch "$UDID" com.jiege.CubeAssistant --preview "$mode"
+            fi
+            sleep 4
+            xcrun simctl io "$UDID" screenshot "/tmp/shots/prev_${mode}.png"
+            echo "shot $mode -> $(wc -c < /tmp/shots/prev_${mode}.png) bytes"
+          done
+          xcrun simctl shutdown "$UDID" || true
+          xcrun simctl delete "$UDID" || true
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CubeAssistant-preview
+          path: /tmp/shots/*.png
+          retention-days: 7

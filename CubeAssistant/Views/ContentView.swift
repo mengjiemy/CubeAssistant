@@ -85,7 +85,33 @@ public struct ContentView: View {
             }
             .sheet(isPresented: $showScan) { CameraScanView(session: session) }
             .sheet(isPresented: $showHistory) { HistoryView(session: session) }
-            .onAppear { session.loadHistory() }
+            .onAppear {
+                session.loadHistory()
+                if let mode = Self.previewArgument() {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                        applyPreview(mode)
+                    }
+                }
+            }
+        }
+    }
+
+    /// 预览模式：云端模拟器截图用。正常启动（无 --preview 参数）时完全不触发。
+    private static func previewArgument() -> String? {
+        let a = ProcessInfo.processInfo.arguments
+        if let i = a.firstIndex(of: "--preview"), i + 1 < a.count { return a[i + 1] }
+        return nil
+    }
+
+    private func applyPreview(_ mode: String) {
+        switch mode {
+        case "scramble": session.scramble()
+        case "solve":
+            session.scramble()
+            session.solve()
+        case "scan": showScan = true
+        case "history": showHistory = true
+        default: break
         }
     }
 
