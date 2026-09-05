@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   build:
@@ -18,8 +19,14 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
+      - name: List targets/schemes
+        run: xcodebuild -project CubeAssistant.xcodeproj -list
+
       - name: Build (no code signing)
+        id: build
+        continue-on-error: true
         run: |
+          set -o pipefail
           xcodebuild build \
             -project CubeAssistant.xcodeproj \
             -target CubeAssistant \
@@ -28,9 +35,19 @@ jobs:
             -derivedDataPath "$PWD/build/DerivedData" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee build.log
 
-      - name: Locate .app and package unsigned IPA
+      - name: Report build error to issue
+        if: steps.build.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RAW=$(tail -120 build.log | sed 's/\x1b\[[0-9;]*m//g')
+          gh issue create --title "CI build failed ($(date +%s))" --body "$(printf 'Build log tail:\n\n```\n%s\n```\n\nLog total bytes: %s' "$RAW" "$(wc -c < build.log)")"
+
+      - name: Package unsigned IPA
+        if: steps.build.outcome == 'success'
         run: |
           APP=$(find "$PWD/build/DerivedData/Build/Products" -name "CubeAssistant.app" -maxdepth 3 -type d | head -1)
           echo "APP=$APP"
@@ -40,6 +57,7 @@ jobs:
           cd build && zip -r CubeAssistant.ipa Payload
 
       - name: Upload IPA artifact
+        if: steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: CubeAssistant-unsigned-ipa
