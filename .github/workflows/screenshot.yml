@@ -87,6 +87,27 @@ jobs:
           xcrun simctl install "$UDID" "$APP" >> "$DIAG" 2>&1
           echo "install rc=$?" >> "$DIAG"
           xcrun simctl listapps "$UDID" 2>/dev/null | grep -c "com.jiege.CubeAssistant" | sed 's/^/installed_count=/' >> "$DIAG"
+
+          # ====== 第一次裸 launch（不带 --preview）诊断 App 是否能起来 ======
+          echo "=== bare launch diag ===" >> "$DIAG"
+          xcrun simctl terminate "$UDID" com.jiege.CubeAssistant 2>/dev/null
+          sleep 1
+          xcrun simctl launch --console-pty "$UDID" com.jiege.CubeAssistant >> "$DIAG" 2>&1 &
+          LAUNCH_PID=$!
+          sleep 8
+          kill $LAUNCH_PID 2>/dev/null
+          wait $LAUNCH_PID 2>/dev/null
+          echo "--- launchctl list ---" >> "$DIAG"
+          xcrun simctl spawn "$UDID" launchctl list 2>/dev/null | grep -i cube >> "$DIAG" || echo "(no cube process)" >> "$DIAG"
+          echo "--- get_app_state ---" >> "$DIAG"
+          xcrun simctl get_app_state "$UDID" com.jiege.CubeAssistant >> "$DIAG" 2>&1
+          echo "--- last 30s log ---" >> "$DIAG"
+          xcrun simctl spawn "$UDID" log show --last 30s --predicate 'subsystem == "com.jiege.CubeAssistant" OR processImagePath ENDSWITH "CubeAssistant"' --style compact >> "$DIAG" 2>&1
+          echo "--- crash reports ---" >> "$DIAG"
+          xcrun simctl spawn "$UDID" log show --last 60s --predicate 'eventMessage CONTAINS "CubeAssistant" AND (eventMessage CONTAINS "crash" OR eventMessage CONTAINS "Crash" OR eventMessage CONTAINS "Fatal" OR eventMessage CONTAINS "Exception" OR eventMessage CONTAINS "Termin")' --style compact >> "$DIAG" 2>&1
+          ls -la ~/Library/Logs/DiagnosticReports/ 2>/dev/null | grep -i cube >> "$DIAG" || echo "(no diagnostic cube reports)" >> "$DIAG"
+
+          # ====== 循环每个 mode 截图 ======
           for mode in home scramble solve scan history; do
             xcrun simctl terminate "$UDID" com.jiege.CubeAssistant 2>/dev/null || true
             sleep 1
@@ -96,8 +117,9 @@ jobs:
               xcrun simctl launch "$UDID" com.jiege.CubeAssistant --preview "$mode" >> "$DIAG" 2>&1
             fi
             echo "launch rc=$? mode=$mode" >> "$DIAG"
-            sleep 6
-            xcrun simctl get_app_state "$UDID" com.jiege.CubeAssistant 2>/dev/null | tail -1 | sed 's/^/state=/' >> "$DIAG"
+            sleep 8
+            echo "--- mode=$mode app_state ---" >> "$DIAG"
+            xcrun simctl get_app_state "$UDID" com.jiege.CubeAssistant >> "$DIAG" 2>&1
             xcrun simctl io "$UDID" screenshot "/tmp/shots/prev_${mode}.png" >> "$DIAG" 2>&1
             echo "shot $mode -> $(wc -c < /tmp/shots/prev_${mode}.png 2>/dev/null) bytes" >> "$DIAG"
           done
