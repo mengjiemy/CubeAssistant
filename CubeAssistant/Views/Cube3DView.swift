@@ -141,7 +141,7 @@ public struct Cube3DView: UIViewRepresentable {
             scene.rootNode.addChildNode(pivot)
             for n in layer {
                 let wt = n.worldTransform
-                n.removeFromParent()
+                n.removeFromParentNode()
                 pivot.addChildNode(n)
                 n.transform = pivot.convertTransform(wt, from: nil)
             }
@@ -150,12 +150,12 @@ public struct Cube3DView: UIViewRepresentable {
             pivot.runAction(action) {
                 for n in layer {
                     let wt = n.worldTransform
-                    n.removeFromParent()
+                    n.removeFromParentNode()
                     self.scene.rootNode.addChildNode(n)
                     n.transform = self.scene.rootNode.convertTransform(wt, from: nil)
                     n.position = SCNVector3(round(n.position.x), round(n.position.y), round(n.position.z))
                 }
-                pivot.removeFromParent()
+                pivot.removeFromParentNode()
                 completion()
             }
         }
