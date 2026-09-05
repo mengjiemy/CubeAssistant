@@ -22,6 +22,14 @@ jobs:
       - name: List targets/schemes
         run: xcodebuild -project CubeAssistant.xcodeproj -list
 
+      - name: Flatten Swift sources to match Xcode project group paths
+        run: |
+          for d in Engine Models Views; do
+            if [ -d "CubeAssistant/$d" ]; then cp CubeAssistant/$d/*.swift CubeAssistant/ 2>/dev/null || true; fi
+          done
+          echo "=== CubeAssistant/ 下 swift 文件 ==="
+          ls CubeAssistant/*.swift | wc -l
+
       - name: Build (no code signing)
         id: build
         continue-on-error: true
