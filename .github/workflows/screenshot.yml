@@ -1,10 +1,14 @@
 name: Simulator Preview Screenshots
 
+# 触发：打 preview-* tag 推送即跑（SSH push 即可，无需 token 调 API）
 on:
+  push:
+    tags:
+      - 'preview-*'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   issues: write
 
 jobs:
@@ -40,20 +44,16 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             2>&1 | tee sim.log
 
-      - name: Verify app bundle (icon + executable)
+      - name: Verify app bundle (executable + icon assets)
         id: verify
         run: |
           APP=$(find "$PWD/build" -name "CubeAssistant.app" -maxdepth 4 -type d | head -1)
           echo "APP=$APP"
-          if [ -z "$APP" ]; then
-            echo "NO_APP_BUNDLE"; exit 1
-          fi
+          if [ -z "$APP" ]; then echo "NO_APP_BUNDLE"; exit 1; fi
           EXE="$APP/CubeAssistant"
           if [ ! -x "$EXE" ]; then echo "NO_EXECUTABLE"; exit 1; fi
           echo "exe type: $(file "$EXE")"
-          # 图标资源：AppIcon 应在 Assets.car 或 AppIcon.appiconset
           if [ -f "$APP/Assets.car" ]; then echo "Assets.car present"; else echo "WARN no Assets.car"; fi
-          ls "$APP" | head -40
           echo "APP_OK"
 
       - name: Boot simulator + install + screenshots
@@ -71,11 +71,9 @@ jobs:
           echo "=== install ==="
           xcrun simctl install "$UDID" "$APP"
           echo "install rc=$?"
-          # 确认安装成功：listapps 中含 bundle id
           xcrun simctl listapps "$UDID" 2>/dev/null | grep -c "com.jiege.CubeAssistant" | sed 's/^/installed_count=/'
           mkdir -p /tmp/shots
           for mode in home scramble solve scan history; do
-            # 普通 launch（不阻塞），让 app 常驻前台
             xcrun simctl terminate "$UDID" com.jiege.CubeAssistant 2>/dev/null || true
             sleep 1
             if [ "$mode" = "home" ]; then
@@ -90,7 +88,6 @@ jobs:
             xcrun simctl io "$UDID" screenshot "/tmp/shots/prev_${mode}.png"
             echo "shot $mode -> $(wc -c < /tmp/shots/prev_${mode}.png) bytes"
           done
-          # 诊断汇总
           {
             echo "=== RUNTIME ==="; echo "$RUNTIME"
             echo "=== APP ==="; echo "$APP"
@@ -100,16 +97,20 @@ jobs:
           xcrun simctl shutdown "$UDID" || true
           xcrun simctl delete "$UDID" || true
 
-      - name: Upload screenshots + diag
+      - name: Commit previews back to preview branch (viewable without token)
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: CubeAssistant-preview
-          path: |
-            /tmp/shots/*.png
-            /tmp/shots/_diag.txt
-          if-no-files-found: ignore
-          retention-days: 7
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/mengjiemy/CubeAssistant.git
+          mkdir -p preview
+          cp /tmp/shots/*.png preview/ 2>/dev/null || true
+          cp /tmp/shots/_diag.txt preview/ 2>/dev/null || true
+          git add preview/ || true
+          git commit -m "chore: simulator previews [skip ci]" || echo "no changes to commit"
+          git push origin HEAD:preview || echo "push preview failed"
 
       - name: Report failure to issue
         if: failure()
@@ -117,5 +118,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           RAW=$(grep -iE "error:|BUILD FAILED|NO_APP_BUNDLE|NO_EXECUTABLE|install rc=|cannot be found|no such module" sim.log /tmp/shots/_diag.txt 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | head -60)
-          [ -z "$RAW" ] && RAW="(no error keywords) see artifact _diag.txt"
+          [ -z "$RAW" ] && RAW="(no error keywords) see preview branch _diag.txt"
           gh issue create --title "Preview failed $(date +%s)" --body "$(printf '```\n%s\n```', "$RAW")"
