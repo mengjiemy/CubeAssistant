@@ -1,0 +1,285 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+		029270DE426D45B9BC8107BB /* CubeValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C35B060DBE4EBC9BBD2605 /* CubeValidator.swift */; };
+		D29845A847EC4358B71E776E /* FormulaLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210F0D839B7A4FA997493A80 /* FormulaLibrary.swift */; };
+		6A296D3782F5455AA10CD3B8 /* KociembaSolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD1D38E6EE3475DB8C6337B /* KociembaSolver.swift */; };
+		2AF82EF0BA204F40B83F848F /* Scramble.swift in Sources */ = {isa = PBXBuildFile; fileRef = E52A1F55F65849108EFF2B92 /* Scramble.swift */; };
+		50F8AFEED28147DA80AE48F6 /* CloudStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E590B6A59A4E3BBD637D55 /* CloudStore.swift */; };
+		39F3D342759D48F38090B215 /* CubeSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31A4AA1583D84E4E97869D0B /* CubeSession.swift */; };
+		73EE2F25635B490F9D399BAA /* CubeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F26C8F0C261D4A02AB92C3D8 /* CubeState.swift */; };
+		F6046A0FE4474AAFB891E95A /* Move.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6C850129D374815B9CDFFF4 /* Move.swift */; };
+		F4E755165D7A415F9E5CB98C /* CameraScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8123FD06A183454EAF58AE43 /* CameraScanView.swift */; };
+		24C733535C484B7B82768F03 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E330E7DEFBA542B79FF9A2B7 /* ContentView.swift */; };
+		07CDA1C7C3C6468884956583 /* Cube3DView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1054C2BD165840298BAC0F1C /* Cube3DView.swift */; };
+		DBB1DCD6A16D4825A5B2BC0F /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30AD0E82ED284B8FBF017D17 /* HistoryView.swift */; };
+		BA76008E7F9B49D0B6F51D1B /* CubeAssistantApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CF911F67A564FFF91FEAF64 /* CubeAssistantApp.swift */; };
+		C8C35B060DBE4EBC9BBD2605 /* CubeValidator.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CubeValidator.swift; sourceTree = "<group>"; };
+		210F0D839B7A4FA997493A80 /* FormulaLibrary.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FormulaLibrary.swift; sourceTree = "<group>"; };
+		8FD1D38E6EE3475DB8C6337B /* KociembaSolver.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = KociembaSolver.swift; sourceTree = "<group>"; };
+		E52A1F55F65849108EFF2B92 /* Scramble.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Scramble.swift; sourceTree = "<group>"; };
+		21E590B6A59A4E3BBD637D55 /* CloudStore.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CloudStore.swift; sourceTree = "<group>"; };
+		31A4AA1583D84E4E97869D0B /* CubeSession.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CubeSession.swift; sourceTree = "<group>"; };
+		F26C8F0C261D4A02AB92C3D8 /* CubeState.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CubeState.swift; sourceTree = "<group>"; };
+		E6C850129D374815B9CDFFF4 /* Move.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Move.swift; sourceTree = "<group>"; };
+		8123FD06A183454EAF58AE43 /* CameraScanView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CameraScanView.swift; sourceTree = "<group>"; };
+		E330E7DEFBA542B79FF9A2B7 /* ContentView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		1054C2BD165840298BAC0F1C /* Cube3DView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Cube3DView.swift; sourceTree = "<group>"; };
+		30AD0E82ED284B8FBF017D17 /* HistoryView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
+		0CF911F67A564FFF91FEAF64 /* CubeAssistantApp.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CubeAssistantApp.swift; sourceTree = "<group>"; };
+		F1AA314053194CF3A50F8849 /* CubeAssistant.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CubeAssistant.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CC78A228DA8D425FAEC87D01 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (
+		); runOnlyForDeploymentPostprocessing = 0; };
+		E6CA440AA8A440768AFFB36B /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (
+		); runOnlyForDeploymentPostprocessing = 0; };
+		F82B24C4C3174204B6FE6A12 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
+				029270DE426D45B9BC8107BB /* CubeValidator.swift in Sources */,
+				D29845A847EC4358B71E776E /* FormulaLibrary.swift in Sources */,
+				6A296D3782F5455AA10CD3B8 /* KociembaSolver.swift in Sources */,
+				2AF82EF0BA204F40B83F848F /* Scramble.swift in Sources */,
+				50F8AFEED28147DA80AE48F6 /* CloudStore.swift in Sources */,
+				39F3D342759D48F38090B215 /* CubeSession.swift in Sources */,
+				73EE2F25635B490F9D399BAA /* CubeState.swift in Sources */,
+				F6046A0FE4474AAFB891E95A /* Move.swift in Sources */,
+				F4E755165D7A415F9E5CB98C /* CameraScanView.swift in Sources */,
+				24C733535C484B7B82768F03 /* ContentView.swift in Sources */,
+				07CDA1C7C3C6468884956583 /* Cube3DView.swift in Sources */,
+				DBB1DCD6A16D4825A5B2BC0F /* HistoryView.swift in Sources */,
+				BA76008E7F9B49D0B6F51D1B /* CubeAssistantApp.swift in Sources */,
+		); runOnlyForDeploymentPostprocessing = 0; };
+		78C2723031BF4CCA8354FE85 /* CubeAssistant */ = {isa = PBXGroup; children = (
+				0CF911F67A564FFF91FEAF64,
+				C8C35B060DBE4EBC9BBD2605,
+				210F0D839B7A4FA997493A80,
+				8FD1D38E6EE3475DB8C6337B,
+				E52A1F55F65849108EFF2B92,
+				21E590B6A59A4E3BBD637D55,
+				31A4AA1583D84E4E97869D0B,
+				F26C8F0C261D4A02AB92C3D8,
+				E6C850129D374815B9CDFFF4,
+				8123FD06A183454EAF58AE43,
+				E330E7DEFBA542B79FF9A2B7,
+				1054C2BD165840298BAC0F1C,
+				30AD0E82ED284B8FBF017D17,
+				8839179219F04D50AF89DE3B
+			); path = CubeAssistant; sourceTree = "<group>"; };
+		F37FC9554F3B4E52AF2B4737 /* Engine */ = {isa = PBXGroup; children = (
+				C8C35B060DBE4EBC9BBD2605,
+				210F0D839B7A4FA997493A80,
+				8FD1D38E6EE3475DB8C6337B,
+				E52A1F55F65849108EFF2B92
+			); path = Engine; sourceTree = "<group>"; };
+		98484ADD9B2646679EBD1B9D /* Models */ = {isa = PBXGroup; children = (
+				21E590B6A59A4E3BBD637D55,
+				31A4AA1583D84E4E97869D0B,
+				F26C8F0C261D4A02AB92C3D8,
+				E6C850129D374815B9CDFFF4
+			); path = Models; sourceTree = "<group>"; };
+		A6EE26F7E31C4D94BE5B4DF0 /* Views */ = {isa = PBXGroup; children = (
+				8123FD06A183454EAF58AE43,
+				E330E7DEFBA542B79FF9A2B7,
+				1054C2BD165840298BAC0F1C,
+				30AD0E82ED284B8FBF017D17
+			); path = Views; sourceTree = "<group>"; };
+		8839179219F04D50AF89DE3B /* Resources */ = {isa = PBXGroup; children = (
+
+			); path = Resources; sourceTree = "<group>"; };
+		F3FDBE76D0DF46E182E8D38E /* Products */ = {isa = PBXGroup; children = (
+				F1AA314053194CF3A50F8849
+			); name = Products; sourceTree = "<group>"; };
+		AD8065B5008B47A3B1F6159A /* CubeAssistant */ = {isa = PBXGroup; children = (
+				78C2723031BF4CCA8354FE85,
+				F3FDBE76D0DF46E182E8D38E
+			); name = CubeAssistant; sourceTree = "<group>"; };
+		154DD626FFA14BD8A923BEDD /* CubeAssistant */ = {isa = PBXNativeTarget; buildConfigurationList = C84353624F174449BE3AE14C /* Build configuration list for PBXNativeTarget "CubeAssistant" */; buildPhases = (
+				F82B24C4C3174204B6FE6A12 /* Sources */,
+				CC78A228DA8D425FAEC87D01 /* Frameworks */,
+				E6CA440AA8A440768AFFB36B /* Resources */,
+			); buildRules = (
+		); dependencies = (
+		); name = CubeAssistant; productName = CubeAssistant; productReference = F1AA314053194CF3A50F8849 /* CubeAssistant.app */; productType = "com.apple.product-type.application"; };
+		297B87A131FF4602AA8D4435 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					154DD626FFA14BD8A923BEDD = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = A22718C658684AE98F95FE21 /* Build configuration list for PBXProject "CubeAssistant" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = AD8065B5008B47A3B1F6159A;
+			productRefGroup = F3FDBE76D0DF46E182E8D38E /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				154DD626FFA14BD8A923BEDD /* CubeAssistant */,
+			);
+		};
+		DC0532B4EF334DDBAF0F33F7 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MINIMAL_LINKING = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			}; name = Debug; };
+		CC8ADF6747744D06AF9AB2CB /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MINIMAL_LINKING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = s;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			}; name = Release; };
+		1286DB12D9CC4B46B46D2718 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CubeAssistant/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jiege.CubeAssistant;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			}; name = Debug; };
+		9843F16D2D264462A83AE15C /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = YES;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CubeAssistant/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.jiege.CubeAssistant;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			}; name = Release; };
+		A22718C658684AE98F95FE21 /* Build configuration list for PBXProject "CubeAssistant" */ = {isa = XCConfigurationList; buildConfigurations = (
+				DC0532B4EF334DDBAF0F33F7 /* Debug */,
+				CC8ADF6747744D06AF9AB2CB /* Release */,
+			); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+		C84353624F174449BE3AE14C /* Build configuration list for PBXNativeTarget "CubeAssistant" */ = {isa = XCConfigurationList; buildConfigurations = (
+				1286DB12D9CC4B46B46D2718 /* Debug */,
+				9843F16D2D264462A83AE15C /* Release */,
+			); defaultConfigurationIsVisible = 0; defaultConfigurationName = Debug; };
+	};
+	rootObject = 297B87A131FF4602AA8D4435 /* Project object */;
+}

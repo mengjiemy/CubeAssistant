@@ -1,0 +1,12 @@
+# Xcode
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+**/xcuserdata/
+
+# OS
+.DS_Store
+
+# Build artifacts (produced by CI, not committed)
+*.ipa
