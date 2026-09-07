@@ -114,12 +114,12 @@ public struct ContentView: View {
     // MARK: - 操作栏
     private var controlBar: some View {
         HStack(spacing: 10) {
-            primaryButton("扫描", "viewfinder", showScan != nil ? { showScan = true } : {})
-            iconButton("shuffle", action: session.scramble)
-            iconButton("lightbulb", disabled: session.isSolving, action: session.solve)
-            iconButton("backward.fill", disabled: session.currentStep == 0, action: session.stepBackward)
-            iconButton("forward.fill", disabled: session.currentStep >= session.playbackSequence.count, action: session.stepForward)
-            iconButton("arrow.counterclockwise", action: session.reset)
+            primaryButton("扫描", "viewfinder") { showScan = true }
+            iconButton("shuffle") { session.scramble() }
+            iconButton("lightbulb", disabled: session.isSolving) { session.solve() }
+            iconButton("backward.fill", disabled: session.currentStep == 0) { session.stepBackward() }
+            iconButton("forward.fill", disabled: session.currentStep >= session.playbackSequence.count) { session.stepForward() }
+            iconButton("arrow.counterclockwise") { session.reset() }
         }
         .padding(.horizontal, 6)
     }
