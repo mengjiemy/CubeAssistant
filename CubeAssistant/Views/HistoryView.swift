@@ -59,6 +59,7 @@ public struct HistoryView: View {
                 }
             }
         }
+        .preferredColorScheme(.dark)
     }
 
     private func formatTime(_ t: TimeInterval) -> String {

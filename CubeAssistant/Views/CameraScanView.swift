@@ -126,6 +126,7 @@ public struct CameraScanView: View {
                 }
             }
         }
+        .preferredColorScheme(.dark)
     }
 
     private func finish() {
@@ -210,13 +211,41 @@ public struct CameraScanView: View {
     }
 
     private func classify(_ r: Int, _ g: Int, _ b: Int) -> Int {
-        var best = 0, bestDist = Int.max
+        // HSV 空间距离 + 明度/饱和度加权，解决白/黄、红/橙在 RGB 下易混的问题
+        let hsv = Self.rgbToHSV(r: r, g: g, b: b)
+        var best = 0, bestDist = Double.greatestFiniteMagnitude
         for (i, c) in refColors.enumerated() {
-            let dr = r - c.r, dg = g - c.g, db = b - c.b
-            let dist = dr * dr + dg * dg + db * db
+            let refHSV = Self.rgbToHSV(r: c.r, g: c.g, b: c.b)
+            // 色相环形距离（0-360）
+            let dh = Self.hueDistance(hsv.h, refHSV.h)
+            let ds = hsv.s - refHSV.s
+            let dv = hsv.v - refHSV.v
+            // 明度权重最高（白/黄区分靠明度+饱和度），色相次之
+            let dist = dh * dh * 2.5 + ds * ds * 1.5 + dv * dv * 4.0
             if dist < bestDist { bestDist = dist; best = i }
         }
         return best
+    }
+
+    /// RGB(0-255) → HSV(h:0-360, s:0-1, v:0-1)
+    private static func rgbToHSV(r: Int, g: Int, b: Int) -> (h: Double, s: Double, v: Double) {
+        let rf = Double(r) / 255.0, gf = Double(g) / 255.0, bf = Double(b) / 255.0
+        let mx = max(rf, gf, bf), mn = min(rf, gf, bf), delta = mx - mn
+        var h = 0.0
+        if delta > 0 {
+            if mx == rf { h = 60.0 * ((gf - bf) / delta).truncatingRemainder(dividingBy: 6.0) }
+            else if mx == gf { h = 60.0 * ((bf - rf) / delta + 2.0) }
+            else { h = 60.0 * ((rf - gf) / delta + 4.0) }
+        }
+        if h < 0 { h += 360.0 }
+        let s = mx == 0 ? 0.0 : delta / mx
+        return (h, s, mx)
+    }
+
+    /// 色相环形距离（0-360 → 0-180）
+    private static func hueDistance(_ a: Double, _ b: Double) -> Double {
+        let d = abs(a - b)
+        return d > 180 ? 360 - d : d
     }
 }
 

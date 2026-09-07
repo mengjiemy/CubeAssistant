@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// 主界面：3D 魔方演示 + 计时 + 扫描入口 + 求解回放 + 历史入口。
-/// 直接作为 `WindowGroup` 的根视图即可（见 `CubeAssistantApp`）。
+/// 主题：深空黑底 + iOS 系统蓝 + 玻璃卡片 + SF Symbols（对标苹果官网高级感）。
 public struct ContentView: View {
     @StateObject private var session = CubeSession()
     @State private var showScan = false
@@ -11,76 +11,54 @@ public struct ContentView: View {
 
     public var body: some View {
         NavigationStack {
-            VStack(spacing: 14) {
-                // 计时区
-                HStack(spacing: 20) {
-                    VStack(spacing: 2) {
-                        Text(session.liveElapsed > 0 ? formatTime(session.liveElapsed)
-                             : (session.lastDuration > 0 ? formatTime(session.lastDuration) : "00:00.00"))
-                            .font(.system(size: 34, weight: .semibold, design: .monospaced))
-                        Text(session.liveElapsed > 0 ? "进行中" : "本次用时")
-                            .font(.caption2).foregroundColor(.secondary)
+            ZStack {
+                // 深空黑渐变底（带轻微垂直渐变，避免死黑）
+                LinearGradient(
+                    colors: [Color(red: 0.04, green: 0.04, blue: 0.08),
+                             Color(red: 0.01, green: 0.01, blue: 0.03)],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .ignoresSafeArea()
+
+                VStack(spacing: 20) {
+                    // 计时玻璃卡
+                    timingCard
+
+                    // 3D 魔方
+                    Cube3DView(session: session)
+                        .frame(maxWidth: .infinity, maxHeight: 340)
+                        .clipShape(RoundedRectangle(cornerRadius: 24))
+                        .shadow(color: .black.opacity(0.4), radius: 20, x: 0, y: 10)
+
+                    if let msg = session.message {
+                        Text(msg)
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.6))
+                            .multilineTextAlignment(.center)
                     }
-                    Divider().frame(height: 36)
-                    VStack(spacing: 2) {
-                        Text(session.bestTime > 0 ? formatTime(session.bestTime) : "—")
-                            .font(.system(size: 22, weight: .medium, design: .monospaced))
-                        Text("最佳")
-                            .font(.caption2).foregroundColor(.secondary)
+
+                    // 操作栏（胶囊按钮组）
+                    controlBar
+
+                    // 解法步骤条
+                    if !session.solution.isEmpty {
+                        solutionStrip
                     }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(14)
 
-                Cube3DView(session: session)
-                    .frame(maxWidth: .infinity, maxHeight: 340)
-
-                if let msg = session.message {
-                    Text(msg).font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
+                    Spacer(minLength: 0)
                 }
-
-                // 操作按钮
-                HStack(spacing: 10) {
-                    Button { showScan = true } label: { Label("扫描", systemImage: "viewfinder.circle") }
-                    Button { session.scramble() } label: { Label("打乱", systemImage: "shuffle") }
-                    Button { session.solve() } label: { Label("求解", systemImage: "lightbulb") }
-                        .disabled(session.isSolving)
-                    Button { session.stepBackward() } label: { Image(systemName: "backward.fill") }
-                        .disabled(session.currentStep == 0)
-                    Button { session.stepForward() } label: { Image(systemName: "forward.fill") }
-                        .disabled(session.currentStep >= session.playbackSequence.count)
-                    Button { session.reset() } label: { Image(systemName: "arrow.counterclockwise") }
-                }
-                .buttonStyle(.bordered)
-                .font(.footnote)
-                .padding(.horizontal, 4)
-
-                if !session.solution.isEmpty {
-                    let played = max(0, session.currentStep - session.solutionBase)
-                    ScrollView(.horizontal) {
-                        HStack(spacing: 6) {
-                            ForEach(Array(session.solution.enumerated()), id: \.offset) { i, m in
-                                Text(m.notation)
-                                    .font(.system(.body, design: .monospaced))
-                                    .padding(6)
-                                    .background(i < played ? Color.accentColor.opacity(0.25) : Color.clear)
-                                    .cornerRadius(6)
-                            }
-                        }
-                        .padding(.horizontal, 8)
-                    }
-                    Text("进度 \(played)/\(session.solution.count)")
-                        .font(.caption).foregroundColor(.secondary)
-                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
             }
-            .padding()
-            .navigationTitle("魔方助手")
+            .navigationTitle("魔方学院")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.hidden, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showHistory = true } label: { Image(systemName: "trophy.fill") }
+                    Button { showHistory = true } label: {
+                        Image(systemName: "trophy.fill")
+                            .foregroundColor(Color(red: 1.0, green: 0.62, blue: 0.04))
+                    }
                 }
             }
             .sheet(isPresented: $showScan) { CameraScanView(session: session) }
@@ -94,9 +72,114 @@ public struct ContentView: View {
                 }
             }
         }
+        .preferredColorScheme(.dark)
     }
 
-    /// 预览模式：云端模拟器截图用。正常启动（无 --preview 参数）时完全不触发。
+    // MARK: - 计时玻璃卡
+    private var timingCard: some View {
+        HStack(spacing: 24) {
+            VStack(spacing: 4) {
+                Text(session.liveElapsed > 0 ? formatTime(session.liveElapsed)
+                     : (session.lastDuration > 0 ? formatTime(session.lastDuration) : "00:00.00"))
+                    .font(.system(size: 42, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundColor(.white)
+                Text(session.liveElapsed > 0 ? "进行中" : "本次用时")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.5))
+            }
+            Divider().frame(height: 44).overlay(Color.white.opacity(0.12))
+            VStack(spacing: 4) {
+                Text(session.bestTime > 0 ? formatTime(session.bestTime) : "—")
+                    .font(.system(size: 24, weight: .medium, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundColor(.white)
+                Text("最佳")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.5))
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 18)
+        .background(
+            RoundedRectangle(cornerRadius: 20)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                )
+        )
+    }
+
+    // MARK: - 操作栏
+    private var controlBar: some View {
+        HStack(spacing: 10) {
+            primaryButton("扫描", "viewfinder", showScan != nil ? { showScan = true } : {})
+            iconButton("shuffle", action: session.scramble)
+            iconButton("lightbulb", disabled: session.isSolving, action: session.solve)
+            iconButton("backward.fill", disabled: session.currentStep == 0, action: session.stepBackward)
+            iconButton("forward.fill", disabled: session.currentStep >= session.playbackSequence.count, action: session.stepForward)
+            iconButton("arrow.counterclockwise", action: session.reset)
+        }
+        .padding(.horizontal, 6)
+    }
+
+    private func primaryButton(_ title: String, _ icon: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 11)
+                .background(
+                    Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0))
+                )
+        }
+    }
+
+    private func iconButton(_ systemName: String, disabled: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(.white)
+                .frame(width: 44, height: 44)
+                .background(
+                    Circle().fill(.ultraThinMaterial)
+                        .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1))
+                )
+        }
+        .disabled(disabled)
+        .opacity(disabled ? 0.35 : 1.0)
+    }
+
+    // MARK: - 解法步骤条
+    private var solutionStrip: some View {
+        VStack(spacing: 8) {
+            let played = max(0, session.currentStep - session.solutionBase)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(Array(session.solution.enumerated()), id: \.offset) { i, m in
+                        Text(m.notation)
+                            .font(.system(.body, design: .monospaced))
+                            .fontWeight(i < played ? .semibold : .regular)
+                            .foregroundColor(i < played ? Color(red: 0.04, green: 0.52, blue: 1.0) : .white.opacity(0.7))
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 9)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(i < played ? Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.22) : Color.white.opacity(0.06))
+                            )
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+            Text("进度 \(played)/\(session.solution.count)")
+                .font(.caption)
+                .foregroundColor(.white.opacity(0.5))
+        }
+    }
+
+    // MARK: - 预览模式（模拟器截图用）
     private static func previewArgument() -> String? {
         let a = ProcessInfo.processInfo.arguments
         if let i = a.firstIndex(of: "--preview"), i + 1 < a.count { return a[i + 1] }

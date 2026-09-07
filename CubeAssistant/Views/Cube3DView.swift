@@ -3,9 +3,10 @@ import SwiftUI
 import SceneKit
 
 /// 3D 魔方视图（SceneKit）。
-/// - 以标准配色构建 26 个角/棱块（中心块不可见）。
-/// - 通过对某一层的 9 个块绕面轴旋转 90°（带 pivot 重父化，保留世界变换）实现平滑转动动画。
-/// - 与 `CubeSession` 绑定：当 `currentStep` 变化（前进/后退）时，自动播放对应解法步。
+/// - 标准配色构建 26 个角/棱块（中心块不可见），PBR 材质 + 圆角。
+/// - 通过对某一层 9 个块绕面轴旋转实现平滑转动动画。
+/// - 支持单指拖动自由旋转视角（自定义手势，替换 allowsCameraControl 避免与动画竞态）。
+/// - 与 `CubeSession` 绑定：currentStep 变化时自动播放对应解法步。
 public struct Cube3DView: UIViewRepresentable {
     @ObservedObject var session: CubeSession
 
@@ -13,26 +14,55 @@ public struct Cube3DView: UIViewRepresentable {
 
     public func makeUIView(context: Context) -> SCNView {
         let scnView = SCNView()
-        scnView.allowsCameraControl = true
-        scnView.autoenablesDefaultLighting = true
+        scnView.allowsCameraControl = false
+        scnView.autoenablesDefaultLighting = false
         scnView.backgroundColor = .clear
-        context.coordinator.scene = SCNScene()
-        scnView.scene = context.coordinator.scene
+        scnView.antialiasingMode = .multisampling4X
+
+        let scene = SCNScene()
+        scnView.scene = scene
+        context.coordinator.scene = scene
         context.coordinator.buildCube()
+
         // 摄像机
         let camera = SCNNode()
         camera.camera = SCNCamera()
-        camera.position = SCNVector3(4.5, 4.5, 6.5)
+        camera.camera?.fieldOfView = 40
+        camera.position = SCNVector3(4.2, 4.0, 6.2)
         camera.look(at: SCNVector3(0, 0, 0))
-        context.coordinator.scene.rootNode.addChildNode(camera)
+        scene.rootNode.addChildNode(camera)
+        context.coordinator.cameraNode = camera
+
+        // 光照：环境光 + 定向光（产生立体感）
+        let ambient = SCNNode()
+        ambient.light = SCNLight()
+        ambient.light!.type = .ambient
+        ambient.light!.intensity = 500
+        ambient.light!.color = UIColor(white: 0.85, alpha: 1)
+        scene.rootNode.addChildNode(ambient)
+
+        let key = SCNNode()
+        key.light = SCNLight()
+        key.light!.type = .directional
+        key.light!.intensity = 900
+        key.light!.color = UIColor.white
+        key.position = SCNVector3(5, 8, 5)
+        key.look(at: SCNVector3(0, 0, 0))
+        scene.rootNode.addChildNode(key)
+
         context.coordinator.scnView = scnView
         context.coordinator.lastStep = session.currentStep
+
+        // 单指拖动旋转视角
+        let pan = UIPanGestureRecognizer(target: context.coordinator,
+                                         action: #selector(Coordinator.handlePan(_:)))
+        scnView.addGestureRecognizer(pan)
+
         return scnView
     }
 
     public func updateUIView(_ uiView: SCNView, context: Context) {
         let co = context.coordinator
-        // 打乱 / 重置：整盘重建为复原态，再据 currentStep 把应播放的步补动画。
         if session.generation != co.generation {
             co.generation = session.generation
             co.buildCube()
@@ -58,22 +88,29 @@ public struct Cube3DView: UIViewRepresentable {
     public func makeCoordinator() -> Coordinator { Coordinator() }
 
     // MARK: - Coordinator
-    public final class Coordinator {
+    public final class Coordinator: NSObject {
         var scene: SCNScene!
         weak var scnView: SCNView?
+        weak var cameraNode: SCNNode?
         var cubelets: [SCNNode] = []
         var lastStep = 0
         var generation = 0
         var queue: [Move] = []
         var busy = false
 
+        /// 标准魔方配色（stickerless，与 KociembaSolver 颜色 id 严格对应）
         let colorMap: [Face: UIColor] = [
-            .U: .white, .D: .yellow, .R: .systemRed,
-            .L: .systemOrange, .F: .systemGreen, .B: .systemBlue,
+            .U: UIColor(red: 0.95, green: 0.95, blue: 0.95, alpha: 1), // 白
+            .R: UIColor(red: 0.85, green: 0.16, blue: 0.16, alpha: 1), // 红
+            .F: UIColor(red: 0.13, green: 0.62, blue: 0.28, alpha: 1), // 绿
+            .D: UIColor(red: 0.96, green: 0.82, blue: 0.12, alpha: 1), // 黄
+            .L: UIColor(red: 0.96, green: 0.55, blue: 0.12, alpha: 1), // 橙
+            .B: UIColor(red: 0.10, green: 0.32, blue: 0.72, alpha: 1), // 蓝
         ]
-        let innerColor = UIColor.darkGray
+        let innerColor = UIColor(red: 0.07, green: 0.07, blue: 0.09, alpha: 1)
 
         func buildCube() {
+            cubelets.forEach { $0.removeFromParentNode() }
             cubelets.removeAll()
             for x in -1...1 {
                 for y in -1...1 {
@@ -89,8 +126,7 @@ public struct Cube3DView: UIViewRepresentable {
         }
 
         func makeCubelet(x: Int, y: Int, z: Int) -> SCNNode {
-            let geo = SCNBox(width: 0.95, height: 0.95, length: 0.95, chamferRadius: 0.08)
-            // 材质顺序: +X,-X,+Y,-Y,+Z,-Z
+            let geo = SCNBox(width: 0.96, height: 0.96, length: 0.96, chamferRadius: 0.09)
             let mats: [UIColor] = [
                 x == 1 ? colorMap[.R]! : innerColor,
                 x == -1 ? colorMap[.L]! : innerColor,
@@ -102,10 +138,14 @@ public struct Cube3DView: UIViewRepresentable {
             geo.materials = mats.map { color in
                 let m = SCNMaterial()
                 m.diffuse.contents = color
-                m.specular.contents = UIColor(white: 0.3, alpha: 1)
+                m.lightingModel = .physicallyBased
+                m.roughness.contents = 0.35
+                m.metalness.contents = 0.0
                 return m
             }
-            return SCNNode(geometry: geo)
+            let node = SCNNode(geometry: geo)
+            node.castsShadow = true
+            return node
         }
 
         func enqueue(_ move: Move) { queue.append(move) }
@@ -120,11 +160,11 @@ public struct Cube3DView: UIViewRepresentable {
             }
         }
 
-        /// 绕对应面轴旋转该层的 9 个块 90°（带 pivot 重父化，保留世界变换）。
+        /// 绕对应面轴旋转该层 9 个块（pivot 重父化，保留世界变换）。
         func animate(_ move: Move, completion: @escaping () -> Void) {
             let axis: SCNVector3
             let layerTest: (SCNVector3) -> Bool
-            var sign: Double = (move.turn == 3) ? -1 : 1   // turn==3 为逆时针(逆转)
+            var sign: Double = (move.turn == 3) ? -1 : 1
             let turns: Double = (move.turn == 2) ? 2 : 1
             switch move.face {
             case .U: axis = SCNVector3(0, 1, 0); layerTest = { $0.y > 0.5 }; sign = (move.turn == 3) ? 1 : -1
@@ -157,6 +197,29 @@ public struct Cube3DView: UIViewRepresentable {
                 }
                 pivot.removeFromParentNode()
                 completion()
+            }
+        }
+
+        // MARK: - 手势：单指拖动旋转视角
+        private var lastPanLocation: CGPoint = .zero
+
+        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+            guard let camera = cameraNode else { return }
+            let translation = gesture.translation(in: scnView)
+            switch gesture.state {
+            case .began:
+                lastPanLocation = .zero
+            case .changed:
+                let dx = Float(translation.x - lastPanLocation.x)
+                let dy = Float(translation.y - lastPanLocation.y)
+                // 绕世界 Y 轴旋转（左右），绕相机局部 X 轴旋转（上下）
+                let yaw = SCNAction.rotate(by: CGFloat(dx) * 0.01, around: SCNVector3(0, 1, 0), duration: 0)
+                camera.runAction(yaw)
+                let pitch = SCNAction.rotate(by: CGFloat(dy) * 0.01, around: SCNVector3(1, 0, 0), duration: 0)
+                camera.runAction(pitch)
+                lastPanLocation = translation
+            default:
+                break
             }
         }
     }
