@@ -19,9 +19,6 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
-      - name: List targets/schemes
-        run: xcodebuild -project CubeAssistant.xcodeproj -list
-
       - name: Flatten Swift sources to match Xcode project group paths
         run: |
           for d in Engine Models Views; do
@@ -32,7 +29,6 @@ jobs:
 
       - name: Build (no code signing)
         id: build
-        continue-on-error: true
         run: |
           set -o pipefail
           xcodebuild build \
@@ -46,7 +42,7 @@ jobs:
             2>&1 | tee build.log
 
       - name: Report build error to issue
-        if: steps.build.outcome == 'failure'
+        if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -55,7 +51,7 @@ jobs:
           gh issue create --title "CI build failed $(date +%s)" --body "$(printf 'Filtered errors:\n\n```\n%s\n```\nLog total bytes: %s' "$RAW" "$(wc -c < build.log)")"
 
       - name: Package unsigned IPA
-        if: steps.build.outcome == 'success'
+        if: success()
         run: |
           APP=$(find "$PWD/build" -name "CubeAssistant.app" -maxdepth 4 -type d | head -1)
           echo "APP=$APP"
@@ -65,7 +61,7 @@ jobs:
           cd build && zip -r CubeAssistant.ipa Payload
 
       - name: Upload IPA artifact
-        if: steps.build.outcome == 'success'
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: CubeAssistant-unsigned-ipa
