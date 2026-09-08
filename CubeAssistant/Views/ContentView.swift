@@ -509,6 +509,7 @@ struct LearnView: View {
     // MARK: 2 阶指引（极简：Solver2x2 秒解 → 照做 → 手动点下一步）
 
     /// 2 阶还原指引内容（相对 SolveSession 简单：无轨道对齐校验，步数短≤11）
+    @ViewBuilder
     private var guide2x2Content: some View {
         let current = session.current2x2Move()
         let total = session.solve2x2Steps.count
