@@ -2,11 +2,13 @@ import Foundation
 import SwiftUI
 import SceneKit
 
-/// 3D 魔方视图（SceneKit）。
-/// - 标准配色构建 26 个角/棱块（中心块不可见），PBR 材质 + 圆角。
-/// - 通过对某一层 9 个块绕面轴旋转实现平滑转动动画。
-/// - 支持单指拖动自由旋转视角（自定义手势，替换 allowsCameraControl 避免与动画竞态）。
-/// - 与 `CubeSession` 绑定：currentStep 变化时自动播放对应解法步。
+/// 3D 魔方视图（SceneKit）—— 状态驱动渲染。
+///
+/// 与旧版「播放动画」不同，本版直接读取 `CubeModel` 的 facelet 状态，
+/// 把 54 个贴纸颜色映射到 26 个角/棱块上，静态渲染当前状态。
+/// 用户每转一步，`session.model` 变化 → `updateUIView` 重建贴纸颜色。
+///
+/// 支持单指拖动自由旋转视角（自定义手势，避免与动画竞态）。
 public struct Cube3DView: UIViewRepresentable {
     @ObservedObject var session: CubeSession
 
@@ -22,7 +24,7 @@ public struct Cube3DView: UIViewRepresentable {
         let scene = SCNScene()
         scnView.scene = scene
         context.coordinator.scene = scene
-        context.coordinator.buildCube()
+        context.coordinator.buildCube(facelets: session.cube.facelets)
 
         // 摄像机
         let camera = SCNNode()
@@ -51,7 +53,7 @@ public struct Cube3DView: UIViewRepresentable {
         scene.rootNode.addChildNode(key)
 
         context.coordinator.scnView = scnView
-        context.coordinator.lastStep = session.currentStep
+        context.coordinator.lastFacelets = session.cube.facelets
 
         // 单指拖动旋转视角
         let pan = UIPanGestureRecognizer(target: context.coordinator,
@@ -63,26 +65,10 @@ public struct Cube3DView: UIViewRepresentable {
 
     public func updateUIView(_ uiView: SCNView, context: Context) {
         let co = context.coordinator
-        if session.generation != co.generation {
-            co.generation = session.generation
-            co.buildCube()
-            co.lastStep = 0
-        }
-        let target = session.currentStep
-        let last = co.lastStep
-        guard target != last else { return }
-        let seq = session.playbackSequence
-        if target > last {
-            for i in last..<target {
-                co.enqueue(seq[i])
-            }
-        } else {
-            for i in stride(from: last - 1, through: target, by: -1) {
-                co.enqueue(seq[i].inverted())
-            }
-        }
-        co.lastStep = target
-        co.pump()
+        let facelets = session.cube.facelets
+        guard facelets != co.lastFacelets else { return }
+        co.lastFacelets = facelets
+        co.applyFacelets(facelets)
     }
 
     public func makeCoordinator() -> Coordinator { Coordinator() }
@@ -93,23 +79,21 @@ public struct Cube3DView: UIViewRepresentable {
         weak var scnView: SCNView?
         weak var cameraNode: SCNNode?
         var cubelets: [SCNNode] = []
-        var lastStep = 0
-        var generation = 0
-        var queue: [Move] = []
-        var busy = false
+        var lastFacelets: [Int] = []
 
-        /// 标准魔方配色（stickerless，与 KociembaSolver 颜色 id 严格对应）
-        let colorMap: [Face: UIColor] = [
-            .U: UIColor(red: 0.95, green: 0.95, blue: 0.95, alpha: 1), // 白
-            .R: UIColor(red: 0.85, green: 0.16, blue: 0.16, alpha: 1), // 红
-            .F: UIColor(red: 0.13, green: 0.62, blue: 0.28, alpha: 1), // 绿
-            .D: UIColor(red: 0.96, green: 0.82, blue: 0.12, alpha: 1), // 黄
-            .L: UIColor(red: 0.96, green: 0.55, blue: 0.12, alpha: 1), // 橙
-            .B: UIColor(red: 0.10, green: 0.32, blue: 0.72, alpha: 1), // 蓝
+        /// 标准魔方配色（stickerless，与 facelet 颜色 id 严格对应）
+        let colorMap: [UIColor] = [
+            UIColor(red: 0.95, green: 0.95, blue: 0.95, alpha: 1), // 0 白 U
+            UIColor(red: 0.85, green: 0.16, blue: 0.16, alpha: 1), // 1 红 R
+            UIColor(red: 0.13, green: 0.62, blue: 0.28, alpha: 1), // 2 绿 F
+            UIColor(red: 0.96, green: 0.82, blue: 0.12, alpha: 1), // 3 黄 D
+            UIColor(red: 0.96, green: 0.55, blue: 0.12, alpha: 1), // 4 橙 L
+            UIColor(red: 0.10, green: 0.32, blue: 0.72, alpha: 1), // 5 蓝 B
         ]
         let innerColor = UIColor(red: 0.07, green: 0.07, blue: 0.09, alpha: 1)
 
-        func buildCube() {
+        /// 构建 26 个块（先全部贴内色，再由 facelets 覆盖可见面）
+        func buildCube(facelets: [Int]) {
             cubelets.forEach { $0.removeFromParentNode() }
             cubelets.removeAll()
             for x in -1...1 {
@@ -123,18 +107,13 @@ public struct Cube3DView: UIViewRepresentable {
                     }
                 }
             }
+            applyFacelets(facelets)
         }
 
         func makeCubelet(x: Int, y: Int, z: Int) -> SCNNode {
             let geo = SCNBox(width: 0.96, height: 0.96, length: 0.96, chamferRadius: 0.09)
-            let mats: [UIColor] = [
-                x == 1 ? colorMap[.R]! : innerColor,
-                x == -1 ? colorMap[.L]! : innerColor,
-                y == 1 ? colorMap[.U]! : innerColor,
-                y == -1 ? colorMap[.D]! : innerColor,
-                z == 1 ? colorMap[.F]! : innerColor,
-                z == -1 ? colorMap[.B]! : innerColor,
-            ]
+            // 6 面：+x R, -x L, +y U, -y D, +z F, -z B，先全部内色
+            let mats: [UIColor] = [innerColor, innerColor, innerColor, innerColor, innerColor, innerColor]
             geo.materials = mats.map { color in
                 let m = SCNMaterial()
                 m.diffuse.contents = color
@@ -145,59 +124,66 @@ public struct Cube3DView: UIViewRepresentable {
             }
             let node = SCNNode(geometry: geo)
             node.castsShadow = true
+            node.name = "cubelet_\(x)_\(y)_\(z)"
             return node
         }
 
-        func enqueue(_ move: Move) { queue.append(move) }
-
-        func pump() {
-            guard !busy, let move = queue.first else { return }
-            queue.removeFirst()
-            busy = true
-            animate(move) { [weak self] in
-                self?.busy = false
-                self?.pump()
+        /// 依据 facelet 颜色，给每个块可见面贴对应颜色。
+        ///
+        /// facelet 索引约定：U0-8, R9-17, F18-26, D27-35, L36-44, B45-53。
+        /// 每个面的 9 个 facelet 排列：row-major，行 0=顶部（y=+1 侧），行 2=底部。
+        /// 我们据此定位该面每个贴纸对应的块坐标。
+        func applyFacelets(_ facelets: [Int]) {
+            guard facelets.count == 54 else { return }
+            // 面 → 该面 9 个贴纸对应的 (x,y,z) 块坐标
+            // U 面（y=+1）：facelet 0..8，z 从上到下 = -1,0,1，x 从左到右 = -1,0,1
+            let faceCoords: [(Int, Int, Int)] = [
+                // U 面 (facelet 0-8)：row-major，row 按 z 从 -1(前)到 +1(后)
+                (-1, 1, 1), (0, 1, 1), (1, 1, 1),
+                (-1, 1, 0), (0, 1, 0), (1, 1, 0),
+                (-1, 1, -1), (0, 1, -1), (1, 1, -1),
+                // R 面 (9-17)：x=+1
+                (1, 1, 1), (1, 1, 0), (1, 1, -1),
+                (1, 0, 1), (1, 0, 0), (1, 0, -1),
+                (1, -1, 1), (1, -1, 0), (1, -1, -1),
+                // F 面 (18-26)：z=+1
+                (-1, 1, 1), (0, 1, 1), (1, 1, 1),
+                (-1, 0, 1), (0, 0, 1), (1, 0, 1),
+                (-1, -1, 1), (0, -1, 1), (1, -1, 1),
+                // D 面 (27-35)：y=-1
+                (-1, -1, -1), (0, -1, -1), (1, -1, -1),
+                (-1, -1, 0), (0, -1, 0), (1, -1, 0),
+                (-1, -1, 1), (0, -1, 1), (1, -1, 1),
+                // L 面 (36-44)：x=-1
+                (-1, 1, -1), (-1, 1, 0), (-1, 1, 1),
+                (-1, 0, -1), (-1, 0, 0), (-1, 0, 1),
+                (-1, -1, -1), (-1, -1, 0), (-1, -1, 1),
+                // B 面 (45-53)：z=-1
+                (1, 1, -1), (0, 1, -1), (-1, 1, -1),
+                (1, 0, -1), (0, 0, -1), (-1, 0, -1),
+                (1, -1, -1), (0, -1, -1), (-1, -1, -1),
+            ]
+            for (idx, colorId) in facelets.enumerated() {
+                guard idx < faceCoords.count else { break }
+                let (x, y, z) = faceCoords[idx]
+                let node = cubelets.first { $0.position.x == Float(x) && $0.position.y == Float(y) && $0.position.z == Float(z) }
+                guard let n = node, let geo = n.geometry else { continue }
+                let matIndex = faceMaterialIndex(x: x, y: y, z: z)
+                guard matIndex >= 0, matIndex < geo.materials.count else { continue }
+                geo.materials[matIndex].diffuse.contents = colorMap[colorId]
             }
         }
 
-        /// 绕对应面轴旋转该层 9 个块（pivot 重父化，保留世界变换）。
-        func animate(_ move: Move, completion: @escaping () -> Void) {
-            let axis: SCNVector3
-            let layerTest: (SCNVector3) -> Bool
-            var sign: Double = (move.turn == 3) ? -1 : 1
-            let turns: Double = (move.turn == 2) ? 2 : 1
-            switch move.face {
-            case .U: axis = SCNVector3(0, 1, 0); layerTest = { $0.y > 0.5 }; sign = (move.turn == 3) ? 1 : -1
-            case .D: axis = SCNVector3(0, 1, 0); layerTest = { $0.y < -0.5 }; sign = (move.turn == 3) ? -1 : 1
-            case .R: axis = SCNVector3(1, 0, 0); layerTest = { $0.x > 0.5 }; sign = (move.turn == 3) ? 1 : -1
-            case .L: axis = SCNVector3(1, 0, 0); layerTest = { $0.x < -0.5 }; sign = (move.turn == 3) ? -1 : 1
-            case .F: axis = SCNVector3(0, 0, 1); layerTest = { $0.z > 0.5 }; sign = (move.turn == 3) ? 1 : -1
-            case .B: axis = SCNVector3(0, 0, 1); layerTest = { $0.z < -0.5 }; sign = (move.turn == 3) ? -1 : 1
-            }
-            let angle = sign * Double.pi / 2 * turns
-
-            let layer = cubelets.filter { layerTest($0.position) }
-            let pivot = SCNNode()
-            scene.rootNode.addChildNode(pivot)
-            for n in layer {
-                let wt = n.worldTransform
-                n.removeFromParentNode()
-                pivot.addChildNode(n)
-                n.transform = pivot.convertTransform(wt, from: nil)
-            }
-            let action = SCNAction.rotate(by: angle, around: axis, duration: 0.22)
-            action.timingMode = .easeInEaseOut
-            pivot.runAction(action) {
-                for n in layer {
-                    let wt = n.worldTransform
-                    n.removeFromParentNode()
-                    self.scene.rootNode.addChildNode(n)
-                    n.transform = self.scene.rootNode.convertTransform(wt, from: nil)
-                    n.position = SCNVector3(round(n.position.x), round(n.position.y), round(n.position.z))
-                }
-                pivot.removeFromParentNode()
-                completion()
-            }
+        /// 块坐标 → 该贴纸在 SCNBox 材料数组里的下标（+x,-x,+y,-y,+z,-z）
+        private func faceMaterialIndex(x: Int, y: Int, z: Int) -> Int {
+            // 依据贴纸所在面判断
+            if x == 1 { return 0 }   // +x = R
+            if x == -1 { return 1 }  // -x = L
+            if y == 1 { return 2 }   // +y = U
+            if y == -1 { return 3 }  // -y = D
+            if z == 1 { return 4 }   // +z = F
+            if z == -1 { return 5 }  // -z = B
+            return -1
         }
 
         // MARK: - 手势：单指拖动旋转视角
@@ -212,7 +198,6 @@ public struct Cube3DView: UIViewRepresentable {
             case .changed:
                 let dx = Float(translation.x - lastPanLocation.x)
                 let dy = Float(translation.y - lastPanLocation.y)
-                // 绕世界 Y 轴旋转（左右），绕相机局部 X 轴旋转（上下）
                 let yaw = SCNAction.rotate(by: CGFloat(dx) * 0.01, around: SCNVector3(0, 1, 0), duration: 0)
                 camera.runAction(yaw)
                 let pitch = SCNAction.rotate(by: CGFloat(dy) * 0.01, around: SCNVector3(1, 0, 0), duration: 0)

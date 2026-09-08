@@ -1,219 +1,270 @@
 import Foundation
 import SwiftUI
 
-/// 魔方对局会话：持有当前状态、负责打乱 / 求解 / 解法回放 / 计时 / 成绩存档。
+/// 魔方学院 · UI 层 ViewModel（包装领域模型 `CubeModel`）。
 ///
-/// 核心不变式：模型 `cube` 永远等于「从复原态依次施加 `fullSequence[0..<currentStep]` 所得」。
-/// 3D 视图只负责把 `currentStep` 的增量以旋转动画呈现，因此模型与 3D 视图天然同步，
-/// 无论是打乱、扫描输入还是求解回放都不会脱节。
+/// 领域模型 `CubeModel` 是纯 struct 值语义（无 SwiftUI 依赖），
+/// 本类把它包成 `ObservableObject`，供 SwiftUI 界面观察驱动。
 ///
-/// UI 层（SwiftUI）直接观察本对象即可驱动界面与 3D 演示。
+/// 关键点：
+/// - 所有状态读写在主线程（`@MainActor`），3D 视图、计时、按钮都据此刷新。
+/// - 计时用 `Timer` 驱动 0.1s 刷新 `elapsed` 显示值；真实用时仍由 `CubeModel`
+///   内部用 `Date` 差值精确计算（停止时结算）。
 @MainActor
 public final class CubeSession: NSObject, ObservableObject {
-    /// 当前魔方状态（facelet 模型，颜色 id 0..5）
-    @Published public private(set) var cube = CubeState(solved: true)
-    /// 求解得到的步序（仅「复原」部分，用于横向列表展示），不含打乱步
-    @Published public private(set) var solution: [Move] = []
-    /// 已回放到第几步（索引 `fullSequence`，0 = 复原态）
-    @Published public private(set) var currentStep = 0
-    /// 代数计数器：打乱 / 重置 / 扫描输入时自增，通知 3D 视图整盘重建
-    @Published public private(set) var generation = 0
-    /// 是否正在求解（后台计算时置 true，避免界面卡顿）
-    @Published public private(set) var isSolving = false
-    /// 错误 / 提示信息
-    @Published public private(set) var message: String?
-    /// 本次解法用时（秒），求解完成并走完步序后写入
-    @Published public private(set) var lastDuration: TimeInterval = 0
-    /// 历史最佳用时（秒），本地 UserDefaults 持久化
-    @Published public private(set) var bestTime: TimeInterval = UserDefaults.standard.double(forKey: "cube_best_time")
-    /// 实时计时（求解进行中每秒刷新），用于界面显示
+    /// 领域模型（值语义，每次改动整体替换触发 objectWillChange）
+    @Published public private(set) var model: CubeModel = CubeModel()
+
+    /// 实时计时显示（0.1s 刷新），仅用于界面显示，结算用 `model.elapsed(at:)`
     @Published public private(set) var liveElapsed: TimeInterval = 0
-    /// 历史成绩（从 CloudKit 拉取）
+
+    /// 提示 / 错误信息
+    @Published public var message: String? = nil
+
+    /// 当前还原指引会话（进入"学习/还原"时构建），nil 表示未进入指引
+    @Published public private(set) var solveSession: SolveSession?
+
+    /// 是否正在求解（后台计算 Kociemba，避免卡 UI）
+    @Published public private(set) var isSolving: Bool = false
+
+    /// 本地历史成绩（UserDefaults 持久化）
     @Published public private(set) var history: [SolveRecord] = []
 
-    /// 已施加到当前 `cube` 上的全部转动（打乱步在前，求解步在后）
-    private var fullSequence: [Move] = []
-    /// 打乱步（求解步起点偏移，用于进度展示）
-    private var scrambleMoves: [Move] = []
-    /// 求解开始时刻（解法返回时记录，走到复原态时结算）
-    private var solveStart: Date?
-    /// 实时计时器
     private var timer: Timer?
 
-    public override init() {}
+    public override init() {
+        super.init()
+        history = Self.loadHistoryFromDefaults()
+    }
 
-    /// 供 3D 视图播放用的完整步序（打乱 + 求解）
-    public var playbackSequence: [Move] { fullSequence }
-    /// 求解步在 `playbackSequence` 中的起点
-    public var solutionBase: Int { scrambleMoves.count }
-    /// 当前模型是否已复原
-    public var isSolvedNow: Bool { cube.isSolved }
+    // MARK: - 便捷查询
 
-    /// 复原到初始状态。
+    /// 当前魔方状态
+    public var cube: CubeState { model.cube }
+    /// 魔方身份（物理/虚拟）
+    public var identity: CubeIdentity { model.identity }
+    /// 转动方式（按钮/手势）
+    public var turnMode: TurnMode { model.turnMode }
+    /// 是否正在计时
+    public var isTiming: Bool { model.isTiming }
+    /// 是否已还原
+    public var isSolved: Bool { model.isSolved }
+    /// 是否能继续 undo
+    public var canUndo: Bool { model.canUndo }
+    /// undo 已走的步数（自 checkpoint 起）
+    public var undoCount: Int { model.undoStack.count }
+
+    // MARK: - 身份 / 模式切换
+
+    /// 切换魔方身份（物理 ↔ 虚拟）。切换时重置计时，避免状态混乱。
+    public func setIdentity(_ id: CubeIdentity) {
+        guard model.identity != id else { return }
+        var m = model
+        m.identity = id
+        _ = m.stopTiming()
+        model = m
+        stopTimerUI()
+    }
+
+    /// 切换转动方式（按钮/手势）
+    public func setTurnMode(_ mode: TurnMode) {
+        var m = model
+        m.turnMode = mode
+        model = m
+    }
+
+    // MARK: - 状态建立（打乱/重置/扫描）
+
+    /// 重置为还原态
     public func reset() {
-        generation += 1
-        fullSequence = []
-        scrambleMoves = []
-        solution = []
-        currentStep = 0
-        solveStart = nil
-        stopTimer()
-        cube = CubeState(solved: true)
+        var m = model
+        m.reset()
+        model = m
+        solveSession = nil
         message = nil
+        stopTimerUI()
     }
 
-    /// 随机打乱（默认 25 步），同面连续转动会被避免，更接近真实手拧。
-    /// 打乱本身也会经由 3D 视图以动画呈现。
+    /// 随机打乱（默认 25 步，WCA 风格）
     public func scramble(count: Int = 25) {
-        var moves: [Move] = []
-        var prevFace = -1
-        for _ in 0..<count {
-            var m: Move
-            repeat {
-                m = Move(rawValue: Int.random(in: 0..<18))!
-            } while m.face.rawValue == prevFace
-            moves.append(m)
-            prevFace = m.face.rawValue
-        }
-        scrambleMoves = moves
-        fullSequence = moves
-        currentStep = moves.count
-        recomputeCube()
-        generation += 1
-        solution = []
-        solveStart = nil
-        stopTimer()
-        message = "已打乱，点「求解」获取步骤"
+        var m = model
+        m.scramble(count: count)
+        model = m
+        solveSession = nil
+        message = "已打乱，开始练习吧"
+        stopTimerUI()
     }
 
-    /// 由摄像头扫描 / 手动编辑写入的完整 54 颜色 id。
-    /// 校验通过则更新模型并触发 3D 重建，返回 true；非法返回 false（message 给出原因）。
+    /// 由扫描/手填写入完整 54 色。返回是否成功（非法给出 message）。
     @discardableResult
     public func setFacelets(_ facelets: [Int]) -> Bool {
-        let errs = CubeValidator.validate(facelets: facelets)
-        guard errs.isEmpty else {
-            message = "魔方状态非法：\(errs.map { "\($0)" }.joined(separator: "、"))"
+        var m = model
+        switch m.setFacelets(facelets) {
+        case .success:
+            model = m
+            solveSession = nil
+            message = "已识别魔方状态"
+            stopTimerUI()
+            return true
+        case .failure(let e):
+            message = "魔方状态非法：\(e)"
             return false
         }
-        generation += 1
-        fullSequence = []
-        scrambleMoves = []
-        solution = []
-        currentStep = 0
-        solveStart = nil
-        stopTimer()
-        cube = CubeState(facelets: facelets)
-        message = "已识别，点「求解」获取步骤"
-        return true
     }
 
-    /// 求解当前魔方。先在后台校验 + 计算，完成后再切回主线程更新。
+    // MARK: - 手动转层（按钮/手势双模式共用）
+
+    /// 施加一步转动。返回是否恰好还原（虚拟模式据此自动停表）。
+    @discardableResult
+    public func apply(_ move: Move) -> Bool {
+        var m = model
+        let solved = m.apply(move)
+        model = m
+        // 虚拟模式：转完检测是否还原，还原则自动停表
+        if solved && m.identity == .virtual {
+            finalizeSolve()
+        }
+        return solved
+    }
+
+    /// 连续回退一步（一路可退到 checkpoint）
+    @discardableResult
+    public func undo() -> Bool {
+        var m = model
+        let ok = m.undo()
+        model = m
+        return ok
+    }
+
+    // MARK: - 计时
+
+    /// 开始计时（虚拟/物理通用入口）
+    public func startTiming() {
+        var m = model
+        m.startTiming()
+        model = m
+        startTimerUI()
+    }
+
+    /// 停止计时（返回本次用时）
+    @discardableResult
+    public func stopTiming() -> TimeInterval {
+        let d = model.elapsed(at: Date())
+        var m = model
+        _ = m.stopTiming()
+        model = m
+        stopTimerUI()
+        return d
+    }
+
+    /// 手动结算一次成绩（物理模式：用户觉得自己完成了，手动停表）
+    public func finishManualSolve() {
+        let d = stopTiming()
+        guard d > 0.5 else { return }  // 过滤误触
+        let record = SolveRecord(id: UUID().uuidString,
+                                 duration: d,
+                                 moves: undoCount,
+                                 scramble: "-",
+                                 date: Date())
+        history.insert(record, at: 0)
+        saveHistoryToDefaults()
+        message = "复原！用时 \(Self.format(d))"
+    }
+
+    /// 虚拟模式自动停表结算
+    private func finalizeSolve() {
+        let d = stopTiming()
+        guard d > 0.5 else { return }
+        let record = SolveRecord(id: UUID().uuidString,
+                                 duration: d,
+                                 moves: undoCount,
+                                 scramble: "-",
+                                 date: Date())
+        history.insert(record, at: 0)
+        saveHistoryToDefaults()
+        message = "🎉 复原！用时 \(Self.format(d))"
+    }
+
+    // MARK: - 还原指引（学习）
+
+    /// 以当前状态为起点，构建还原指引会话（后台求解，避免卡 UI）
     public func solve() {
         guard !isSolving else { return }
-        let facelets = cube.facelets
-        let errs = CubeValidator.validate(facelets: facelets)
-        guard errs.isEmpty else {
-            message = "魔方状态非法：\(errs.map { "\($0)" }.joined(separator: "、"))"
+        let facelets = model.cube.facelets
+        // 已还原则无需指引
+        guard !CubeState(facelets: facelets).isSolved else {
+            message = "魔方已还原"
+            return
+        }
+        guard CubeValidator.isValid(facelets: facelets) else {
+            message = "魔方状态非法，无法求解"
             return
         }
         isSolving = true
         message = nil
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let owner = self else { return }
-            let sol: [Move]? = KociembaSolver.solve(facelets: facelets)
+            let session = SolveSession(startFacelets: facelets)
             Task { @MainActor in
-                owner.isSolving = false
-                guard let sol, !sol.isEmpty else {
-                    owner.message = "已复原，无需求解"
-                    return
+                guard let self else { return }
+                self.isSolving = false
+                if let session {
+                    self.solveSession = session
+                    self.message = "共 \(session.totalSteps) 步，跟着做即可"
+                } else {
+                    self.message = "求解失败，请检查魔方状态"
                 }
-                // 拼接：打乱步 + 求解步。currentStep 保持在打乱步末尾，不触发额外动画。
-                owner.fullSequence = owner.scrambleMoves + sol
-                owner.solution = sol
-                owner.solveStart = Date()
-                owner.startTimer()
-                owner.message = "共 \(sol.count) 步，开始计时"
             }
         }
     }
 
-    /// 回放前进一步（自动判断方向：向前后/向后退）。
-    public func stepForward() {
-        guard currentStep < fullSequence.count else { return }
-        currentStep += 1
-        recomputeCube()
-        finalizeIfSolved()
+    /// 退出还原指引
+    public func clearSolve() {
+        solveSession = nil
+        message = nil
     }
 
-    /// 回放后退一步（逆转动）。
-    public func stepBackward() {
-        guard currentStep > 0 else { return }
-        currentStep -= 1
-        recomputeCube()
-    }
+    // MARK: - Timer（UI 显示驱动）
 
-    /// 一键自动回放全部解法（由 3D 视图负责逐帧动画；此处仅更新逻辑状态）。
-    public func applyAll() {
-        while currentStep < fullSequence.count { stepForward() }
-    }
-
-    /// 走到复原态时结算用时、刷新最佳成绩并存入 CloudKit。
-    private func finalizeIfSolved() {
-        guard !solution.isEmpty, currentStep == fullSequence.count, cube.isSolved else { return }
-        guard let start = solveStart else { return }
-        let d = Date().timeIntervalSince(start)
-        lastDuration = d
-        if bestTime == 0 || d < bestTime {
-            bestTime = d
-            UserDefaults.standard.set(bestTime, forKey: "cube_best_time")
-        }
-        message = "复原！用时 \(format(d))，共 \(solution.count) 步"
-        solveStart = nil
-        stopTimer()
-        let scramble = scrambleMoves.map { $0.notation }.joined(separator: " ")
-        CloudStore.shared.save(duration: d, moves: solution.count, scramble: scramble)
-    }
-
-    /// 从 CloudKit 拉取历史成绩。
-    public func loadHistory() {
-        CloudStore.shared.fetch { [weak self] records in
-            Task { @MainActor in
-                self?.history = records
-            }
-        }
-    }
-
-    /// 由 `fullSequence[0..<currentStep]` 重算模型状态，保证与 3D 播放进度一致。
-    private func recomputeCube() {
-        var c = CubeState(solved: true)
-        for m in fullSequence[0..<currentStep] {
-            c.apply(m.rawValue)
-        }
-        cube = c
-    }
-
-    /// 启动实时计时（主线程计时器，0.1s 刷新）
-    private func startTimer() {
-        stopTimer()
+    private func startTimerUI() {
+        stopTimerUI()
         liveElapsed = 0
-        timer = Timer.scheduledTimer(timeInterval: 0.1, target: self,
+        let t = Timer.scheduledTimer(timeInterval: 0.1, target: self,
                                      selector: #selector(tick), userInfo: nil, repeats: true)
+        RunLoop.main.add(t, forMode: .common)
+        timer = t
     }
 
-    /// 停止实时计时
-    private func stopTimer() {
+    private func stopTimerUI() {
         timer?.invalidate()
         timer = nil
         liveElapsed = 0
     }
 
     @objc private func tick() {
-        guard let start = solveStart else { return }
-        liveElapsed = Date().timeIntervalSince(start)
+        liveElapsed = model.elapsed(at: Date())
     }
 
-    /// 秒数 → "m:ss.cs"
-    private func format(_ t: TimeInterval) -> String {
+    // MARK: - 历史成绩持久化（UserDefaults）
+
+    private static let historyKey = "cube_history_records"
+
+    private func saveHistoryToDefaults() {
+        if let data = try? JSONEncoder().encode(history.prefix(100)) {
+            UserDefaults.standard.set(data, forKey: Self.historyKey)
+        }
+    }
+
+    private static func loadHistoryFromDefaults() -> [SolveRecord] {
+        guard let data = UserDefaults.standard.data(forKey: historyKey),
+              let records = try? JSONDecoder().decode([SolveRecord].self, from: data) else {
+            return []
+        }
+        return records
+    }
+
+    // MARK: - 格式化
+
+    static func format(_ t: TimeInterval) -> String {
         let m = Int(t) / 60
         let s = Int(t) % 60
         let cs = Int((t - floor(t)) * 100)
@@ -221,8 +272,8 @@ public final class CubeSession: NSObject, ObservableObject {
     }
 }
 
-/// CloudKit 成绩记录（UI 展示用，结构对齐 CloudStore 的 CKRecord）。
-public struct SolveRecord: Identifiable {
+/// 一次复原成绩记录（本地持久化，结构对齐旧 CloudStore 展示）。
+public struct SolveRecord: Identifiable, Codable, Equatable {
     public let id: String
     public let duration: TimeInterval
     public let moves: Int
