@@ -39,22 +39,31 @@ struct Cube3DView: UIViewRepresentable {
         scene.rootNode.addChildNode(camera)
         context.coordinator.cameraNode = camera
 
-        // 光照：环境光 + 定向光（产生立体感）
+        // 光照：强环境光打底 + 主定向光 + 相机方向补光
         let ambient = SCNNode()
         ambient.light = SCNLight()
         ambient.light!.type = .ambient
-        ambient.light!.intensity = 600
-        ambient.light!.color = UIColor(white: 0.92, alpha: 1)
+        ambient.light!.intensity = 1100
+        ambient.light!.color = UIColor(white: 0.96, alpha: 1)
         scene.rootNode.addChildNode(ambient)
 
         let key = SCNNode()
         key.light = SCNLight()
         key.light!.type = .directional
-        key.light!.intensity = 900
+        key.light!.intensity = 700
         key.light!.color = UIColor.white
-        key.position = SCNVector3(5, 8, 5)
+        key.position = SCNVector3(4.5, 6, 6)
         key.look(at: SCNVector3(0, 0, 0))
         scene.rootNode.addChildNode(key)
+
+        let fill = SCNNode()
+        fill.light = SCNLight()
+        fill.light!.type = .directional
+        fill.light!.intensity = 400
+        fill.light!.color = UIColor(white: 0.95, alpha: 1)
+        fill.position = SCNVector3(-4, 3, 4)
+        fill.look(at: SCNVector3(0, 0, 0))
+        scene.rootNode.addChildNode(fill)
 
         context.coordinator.scnView = scnView
         return scnView
@@ -168,18 +177,19 @@ struct Cube3DView: UIViewRepresentable {
 
         /// 在 cubelet 节点上添加一个外表面 sticker plane
         private func addSticker(to parent: SCNNode, dir: FaceDir) {
-            let plane = SCNPlane(width: 0.86, height: 0.86)
+            // sticker 比内芯面略小且往外推，避免被 chamfer 黑边遮挡显得"脏"
+            let plane = SCNPlane(width: 0.82, height: 0.82)
             let mat = SCNMaterial()
             mat.diffuse.contents = innerColor
             mat.lightingModel = .physicallyBased
-            mat.roughness.contents = 0.25
+            mat.roughness.contents = 0.35
             mat.metalness.contents = 0.0
             plane.materials = [mat]
 
             let sticker = SCNNode(geometry: plane)
             sticker.name = "sticker_\(dir.rawValue)"
 
-            let half: Float = 0.48
+            let half: Float = 0.50
             switch dir {
             case .pz:
                 sticker.position = SCNVector3(0, 0, half)
