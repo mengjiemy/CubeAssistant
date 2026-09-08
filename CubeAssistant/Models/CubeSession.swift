@@ -31,6 +31,8 @@ final class CubeSession: NSObject, ObservableObject {
     @Published private(set) var history: [SolveRecord] = []
 
     private var timer: Timer?
+    /// 暂停前累计的用时（秒）。支持「暂停→继续」跨段累计。
+    private var accumulatedElapsed: TimeInterval = 0
 
     override init() {
         super.init()
@@ -64,6 +66,7 @@ final class CubeSession: NSObject, ObservableObject {
         _ = m.stopTiming()
         model = m
         stopTimerUI()
+        accumulatedElapsed = 0
     }
 
     /// 切换转动方式（按钮/手势）
@@ -83,6 +86,7 @@ final class CubeSession: NSObject, ObservableObject {
         solveSession = nil
         message = nil
         stopTimerUI()
+        accumulatedElapsed = 0
     }
 
     /// 随机打乱（默认 25 步，WCA 风格）
@@ -93,6 +97,7 @@ final class CubeSession: NSObject, ObservableObject {
         solveSession = nil
         message = "已打乱，开始练习吧"
         stopTimerUI()
+        accumulatedElapsed = 0
     }
 
     /// 由扫描/手填写入完整 54 色。返回是否成功（非法给出 message）。
@@ -105,6 +110,7 @@ final class CubeSession: NSObject, ObservableObject {
             solveSession = nil
             message = "已识别魔方状态"
             stopTimerUI()
+            accumulatedElapsed = 0
             return true
         case .failure(let e):
             message = "魔方状态非法：\(e)"
@@ -138,7 +144,7 @@ final class CubeSession: NSObject, ObservableObject {
 
     // MARK: - 计时
 
-    /// 开始计时（虚拟/物理通用入口）
+    /// 开始计时（虚拟/物理通用入口）。若已在暂停态累计，则从累计值继续。
     func startTiming() {
         var m = model
         m.startTiming()
@@ -146,14 +152,27 @@ final class CubeSession: NSObject, ObservableObject {
         startTimerUI()
     }
 
-    /// 停止计时（返回本次用时）
-    @discardableResult
-    func stopTiming() -> TimeInterval {
+    /// 暂停计时：停表但保留已累计用时（不清零），供「继续」恢复。
+    func pauseTiming() {
+        guard model.isTiming else { return }
         let d = model.elapsed(at: Date())
+        accumulatedElapsed += d
         var m = model
         _ = m.stopTiming()
         model = m
         stopTimerUI()
+        liveElapsed = accumulatedElapsed
+    }
+
+    /// 停止计时（返回本次总用时，含累计段）。清空累计。
+    @discardableResult
+    func stopTiming() -> TimeInterval {
+        let d = accumulatedElapsed + model.elapsed(at: Date())
+        var m = model
+        _ = m.stopTiming()
+        model = m
+        stopTimerUI()
+        accumulatedElapsed = 0
         return d
     }
 
@@ -227,7 +246,7 @@ final class CubeSession: NSObject, ObservableObject {
 
     private func startTimerUI() {
         stopTimerUI()
-        liveElapsed = 0
+        liveElapsed = accumulatedElapsed
         let t = Timer.scheduledTimer(timeInterval: 0.1, target: self,
                                      selector: #selector(tick), userInfo: nil, repeats: true)
         RunLoop.main.add(t, forMode: .common)
@@ -237,11 +256,10 @@ final class CubeSession: NSObject, ObservableObject {
     private func stopTimerUI() {
         timer?.invalidate()
         timer = nil
-        liveElapsed = 0
     }
 
     @objc private func tick() {
-        liveElapsed = model.elapsed(at: Date())
+        liveElapsed = accumulatedElapsed + model.elapsed(at: Date())
     }
 
     // MARK: - 历史成绩持久化（UserDefaults）

@@ -211,6 +211,7 @@ struct HomeView: View {
         case .running:
             Button {
                 timingState = .paused
+                session.pauseTiming()
             } label: {
                 Label("暂停", systemImage: "pause.fill")
                     .font(.subheadline.weight(.semibold))
@@ -224,8 +225,7 @@ struct HomeView: View {
             HStack(spacing: 8) {
                 Button {
                     timingState = .running
-                    // 继续：从最近 elapsed 重新启动计时器（用当前暂停时刻重启）
-                    session.startTiming()
+                    session.startTiming()  // 从累计值继续（accumulatedElapsed 保留）
                 } label: {
                     Label("继续", systemImage: "play.fill")
                         .font(.subheadline.weight(.semibold))

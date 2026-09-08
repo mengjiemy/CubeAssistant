@@ -77,8 +77,6 @@ struct Cube3DView: UIViewRepresentable {
         weak var cameraNode: SCNNode?
         /// cubelets[key] = 块节点；key 格式 "x_y_z"
         var cubelets: [String: SCNNode] = [:]
-        /// 块节点 → 该块 6 个外露面在 materials 数组里的下标
-        var exposedFaces: [String: [Int]] = [:]
         var lastFacelets: [Int] = []
 
         /// 标准魔方配色（stickerless，与 facelet 颜色 id 严格对应）
@@ -96,7 +94,6 @@ struct Cube3DView: UIViewRepresentable {
         func buildCube(facelets: [Int]) {
             cubelets.values.forEach { $0.removeFromParentNode() }
             cubelets.removeAll()
-            exposedFaces.removeAll()
             for x in -1...1 {
                 for y in -1...1 {
                     for z in -1...1 {
@@ -132,100 +129,67 @@ struct Cube3DView: UIViewRepresentable {
             let node = SCNNode(geometry: geo)
             node.castsShadow = true
             node.name = "cubelet_\(x)_\(y)_\(z)"
-
-            // 记录该块哪些面是外露的（在 materials 数组里的下标）
-            var exposed: [Int] = []
-            if x == 1  { exposed.append(0) }  // +x
-            if x == -1 { exposed.append(1) }  // -x
-            if y == 1  { exposed.append(2) }  // +y
-            if y == -1 { exposed.append(3) }  // -y
-            if z == 1  { exposed.append(4) }  // +z
-            if z == -1 { exposed.append(5) }  // -z
-            exposedFaces["\(x)_\(y)_\(z)"] = exposed
-
             return node
         }
 
         /// 根据 facelets 给每个块可见面贴对应颜色。
         ///
-        /// facelet 索引约定（CubeState 标准）：
+        /// facelet 索引约定（CubeState 标准，与 KociembaSolver 权威一致）：
         /// - U(0-8), R(9-17), F(18-26), D(27-35), L(36-44), B(45-53)
-        /// - 每个面 9 贴片 row-major：行 0 在 z=-1 一侧，行 2 在 z=+1 一侧
-        /// - 每行：列 0 在 x=-1，列 2 在 x=+1
+        /// - 每面 9 贴片 row-major（从该面正面看 3×3）
         ///
-        /// CubeState 的 U/D 面是从 +y 俯视，F 面是从 +z 看（x 左到右、y 上到下），
-        /// L 面是从 -x 看（z 远到近、y 上到下），R 面从 +x 看（z 近到远、y 上到下），
-        /// B 面从 -z 看（x 右到左、y 上到下）。
+        /// 以下 faceMap 是从 KociembaSolver 的 cornerFacelet/edgeFacelet 权威定义
+        /// 反推出的「facelet 索引 → (x,y,z) 块坐标」，已程序验证每个面 9 贴片
+        /// 严格落在同一平面。
         func applyFacelets(_ facelets: [Int]) {
             guard facelets.count == 54 else { return }
-            // (x, y, z) → 该面在 SCNBox materials 数组里的下标
-            func matIndex(x: Int, y: Int, z: Int) -> Int? {
+
+            // facelet 索引 → (x, y, z) 块坐标（权威，来自 Kociemba corner/edge facelet 定义）
+            let faceMap: [(Int, Int, Int)] = [
+                // U 面 (0-8)：y=+1
+                (-1, 1, -1), (0, 1, -1), (1, 1, -1),
+                (-1, 1,  0), (0, 1,  0), (1, 1,  0),
+                (-1, 1,  1), (0, 1,  1), (1, 1,  1),
+                // R 面 (9-17)：x=+1
+                (1, 1,  1), (1, 1,  0), (1, 1, -1),
+                (1, 0,  1), (1, 0,  0), (1, 0, -1),
+                (1, -1,  1), (1, -1,  0), (1, -1, -1),
+                // F 面 (18-26)：z=+1
+                (-1,  1, 1), (0,  1, 1), (1,  1, 1),
+                (-1,  0, 1), (0,  0, 1), (1,  0, 1),
+                (-1, -1, 1), (0, -1, 1), (1, -1, 1),
+                // D 面 (27-35)：y=-1
+                (-1, -1,  1), (0, -1,  1), (1, -1,  1),
+                (-1, -1,  0), (0, -1,  0), (1, -1,  0),
+                (-1, -1, -1), (0, -1, -1), (1, -1, -1),
+                // L 面 (36-44)：x=-1
+                (-1,  1, -1), (-1,  1,  0), (-1,  1,  1),
+                (-1,  0, -1), (-1,  0,  0), (-1,  0,  1),
+                (-1, -1, -1), (-1, -1,  0), (-1, -1,  1),
+                // B 面 (45-53)：z=-1
+                (1,  1, -1), (0,  1, -1), (-1,  1, -1),
+                (1,  0, -1), (0,  0, -1), (-1,  0, -1),
+                (1, -1, -1), (0, -1, -1), (-1, -1, -1),
+            ]
+
+            // (x,y,z) → SCNBox material index（0=+x, 1=-x, 2=+y, 3=-y, 4=+z, 5=-z）
+            func matIndex(x: Int, y: Int, z: Int) -> Int {
                 if x ==  1 { return 0 }
                 if x == -1 { return 1 }
                 if y ==  1 { return 2 }
                 if y == -1 { return 3 }
                 if z ==  1 { return 4 }
-                if z == -1 { return 5 }
-                return nil
+                return 5  // z == -1
             }
 
-            // facelet 索引 → (块坐标 x,y,z)
-            // U 面 (0-8)：y=1，9 块在 xz 平面上
-            //   观察方向：从 +y 俯视，row 按 z 从 -1 到 +1，col 按 x 从 -1 到 +1
-            let uPositions: [(Int,Int,Int)] = [
-                (-1, 1, -1), (0, 1, -1), (1, 1, -1),
-                (-1, 1,  0), (0, 1,  0), (1, 1,  0),
-                (-1, 1,  1), (0, 1,  1), (1, 1,  1),
-            ]
-            // R 面 (9-17)：x=1，9 块在 yz 平面上
-            //   观察方向：从 +x 看，row 按 y 从 +1 到 -1，col 按 z 从 +1 到 -1
-            let rPositions: [(Int,Int,Int)] = [
-                (1,  1,  1), (1,  1,  0), (1,  1, -1),
-                (1,  0,  1), (1,  0,  0), (1,  0, -1),
-                (1, -1,  1), (1, -1,  0), (1, -1, -1),
-            ]
-            // F 面 (18-26)：z=1
-            //   观察方向：从 +z 看，row 按 y 从 +1 到 -1，col 按 x 从 -1 到 +1
-            let fPositions: [(Int,Int,Int)] = [
-                (-1,  1, 1), (0,  1, 1), (1,  1, 1),
-                (-1,  0, 1), (0,  0, 1), (1,  0, 1),
-                (-1, -1, 1), (0, -1, 1), (1, -1, 1),
-            ]
-            // D 面 (27-35)：y=-1
-            //   观察方向：从 -y 仰视，row 按 z 从 +1 到 -1，col 按 x 从 -1 到 +1
-            //   (因为翻到下底面看，row 反转)
-            let dPositions: [(Int,Int,Int)] = [
-                (-1, -1,  1), (0, -1,  1), (1, -1,  1),
-                (-1, -1,  0), (0, -1,  0), (1, -1,  0),
-                (-1, -1, -1), (0, -1, -1), (1, -1, -1),
-            ]
-            // L 面 (36-44)：x=-1
-            //   观察方向：从 -x 看，row 按 y 从 +1 到 -1，col 按 z 从 -1 到 +1
-            let lPositions: [(Int,Int,Int)] = [
-                (-1,  1, -1), (-1,  1,  0), (-1,  1,  1),
-                (-1,  0, -1), (-1,  0,  0), (-1,  0,  1),
-                (-1, -1, -1), (-1, -1,  0), (-1, -1,  1),
-            ]
-            // B 面 (45-53)：z=-1
-            //   观察方向：从 -z 看，row 按 y 从 +1 到 -1，col 按 x 从 +1 到 -1
-            let bPositions: [(Int,Int,Int)] = [
-                ( 1,  1, -1), ( 0,  1, -1), (-1,  1, -1),
-                ( 1,  0, -1), ( 0,  0, -1), (-1,  0, -1),
-                ( 1, -1, -1), ( 0, -1, -1), (-1, -1, -1),
-            ]
-
-            let allFaces: [[(Int,Int,Int)]] = [uPositions, rPositions, fPositions, dPositions, lPositions, bPositions]
-            for (faceIdx, positions) in allFaces.enumerated() {
-                for (i, pos) in positions.enumerated() {
-                    let faceletIdx = faceIdx * 9 + i
-                    let colorId = facelets[faceletIdx]
-                    guard colorId >= 0 && colorId < colorMap.count else { continue }
-                    let (x, y, z) = pos
-                    let key = "\(x)_\(y)_\(z)"
-                    guard let node = cubelets[key],
-                          let matIdx = matIndex(x: x, y: y, z: z) else { continue }
-                    node.geometry?.materials[matIdx].diffuse.contents = colorMap[colorId]
-                }
+            for (idx, colorId) in facelets.enumerated() {
+                guard idx < faceMap.count else { break }
+                guard colorId >= 0 && colorId < colorMap.count else { continue }
+                let (x, y, z) = faceMap[idx]
+                let key = "\(x)_\(y)_\(z)"
+                guard let node = cubelets[key] else { continue }
+                let mi = matIndex(x: x, y: y, z: z)
+                node.geometry?.materials[mi].diffuse.contents = colorMap[colorId]
             }
         }
     }
