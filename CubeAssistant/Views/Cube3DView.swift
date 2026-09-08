@@ -19,11 +19,14 @@ struct Cube3DView: UIViewRepresentable {
     /// 渲染阶数：3=3阶(26块/每面9格)，2=2阶(8块/每面4格)。
     /// 默认取 session 当前阶数；独立传入时(如无 session 的场景)可显式指定。
     var order: Int = 3
+    /// 可选：选中的面（按钮高亮态或手势选层），对应 3D 魔方该面加高亮描边。
+    var selectedFace: Face? = nil
 
-    init(session: CubeSession, overrideFacelets: [Int]? = nil, order: Int? = nil) {
+    init(session: CubeSession, overrideFacelets: [Int]? = nil, order: Int? = nil, selectedFace: Face? = nil) {
         self.session = session
         self.overrideFacelets = overrideFacelets
         self.order = order ?? session.order
+        self.selectedFace = selectedFace
     }
 
     /// 解析本次要渲染的 facelets：优先 override；否则按当前阶数取 session 对应状态。
@@ -55,7 +58,8 @@ struct Cube3DView: UIViewRepresentable {
         }
         context.coordinator.lastFacelets = initial
 
-        // 摄像机（2 阶整体小，拉近到约一半距离）
+        // 默认相机节点（保留作「reset 模板」）。注意：SCNView 启用 allowsCameraControl
+        // 后会接管 pointOfView 控制；本节点不参与渲染，只作为 resetCamera 时回正朝向的参照。
         let camera = SCNNode()
         camera.camera = SCNCamera()
         camera.camera?.fieldOfView = 38
@@ -63,7 +67,9 @@ struct Cube3DView: UIViewRepresentable {
         camera.position = SCNVector3(4.5 * distScale, 4.0 * distScale, 6.5 * distScale)
         camera.look(at: SCNVector3(0, 0, 0))
         scene.rootNode.addChildNode(camera)
-        context.coordinator.cameraNode = camera
+        context.coordinator.defaultCameraNode = camera
+        // 启动时把默认相机挂为 pointOfView，初始呈现正朝向
+        scnView.pointOfView = camera
 
         // 光照：强环境光打底 + 主定向光 + 相机方向补光
         let ambient = SCNNode()
@@ -104,6 +110,10 @@ struct Cube3DView: UIViewRepresentable {
         }
         // 阶数变化：需重建 cube（cubelet 集合不同）
         if order != co.currentOrder {
+            // 同步 defaultCameraNode 的距离：2 阶整体小，拉近到一半
+            let distScale: Float = (order == 2) ? 0.52 : 1.0
+            co.defaultCameraNode?.position = SCNVector3(4.5 * distScale, 4.0 * distScale, 6.5 * distScale)
+            co.defaultCameraNode?.look(at: SCNVector3(0, 0, 0))
             let f = resolveFacelets()
             if order == 2 {
                 co.currentOrder = 2
@@ -115,6 +125,10 @@ struct Cube3DView: UIViewRepresentable {
             co.lastFacelets = f
             co.resetCamera()  // 阶数切换后回正视角到对应距离
             return
+        }
+        // 选面高亮变化：重画高亮（不做几何变更）
+        if selectedFace != co.currentHighlightFace {
+            co.applyHighlight(face: selectedFace)
         }
         let facelets = resolveFacelets()
         guard facelets != co.lastFacelets else { return }
@@ -132,22 +146,40 @@ struct Cube3DView: UIViewRepresentable {
     final class Coordinator: NSObject {
         var scene: SCNScene!
         weak var scnView: SCNView?
-        weak var cameraNode: SCNNode?
+        /// 「默认视角」相机节点（reset 时的朝向参照）。注意：SCNView 启用
+        /// allowsCameraControl 后，defaultCameraController 会接管实际渲染的
+        /// pointOfView；本节点不直接渲染，仅在 reset 时被临时指回。
+        weak var defaultCameraNode: SCNNode?
         /// cubelets[key] = 块节点；key 格式 "x_y_z"
         var cubelets: [String: SCNNode] = [:]
         var lastFacelets: [Int] = []
         var lastCameraResetToken: Int = 0
         /// 当前渲染阶数（3/2），buildCube 时设定，驱动 applyFacelets 分派与相机距离
         var currentOrder = 3
+        /// 当前选中的面（用于 3D 魔方高亮）
+        var currentHighlightFace: Face? = nil
+        /// 高亮描边节点集合（key = cubelet key + dir）
+        var highlightNodes: [String: SCNNode] = [:]
 
-        /// 回正相机到默认视角（顶面朝上、前面朝前），按阶数调距离
+        /// 回正相机到默认视角（顶面朝上、前面朝前），按阶数调距离。
+        /// 实现关键：SCNView 启用 allowsCameraControl 时，实际渲染的 pointOfView 由
+        /// defaultCameraController 接管；直接改 defaultCameraNode.position 不会影响
+        /// 用户看到的画面（这就是「回正视角按钮无效」的根因）。正确做法：
+        /// 1) 停惯性；2) 把 pointOfView 临时换回默认相机节点 → 用户看到正朝向；
+        /// 3) 立即重新启用 allowsCameraControl（让 defaultCameraController 重新接管），
+        ///    用户可以继续拖动旋转。
         func resetCamera() {
-            guard let camera = cameraNode else { return }
-            let distScale: Float = (currentOrder == 2) ? 0.52 : 1.0
-            camera.position = SCNVector3(4.5 * distScale, 4.0 * distScale, 6.5 * distScale)
-            camera.look(at: SCNVector3(0, 0, 0))
-            // 同步重置内置相机控制器状态，避免惯性残留
-            scnView?.defaultCameraController.stopInertia()
+            guard let scnView = scnView, let defaultCam = defaultCameraNode else { return }
+            // 先停惯性，避免在切换 pointOfView 期间画面被前一次的旋转惯性继续推
+            scnView.defaultCameraController.stopInertia()
+            // 把 pointOfView 切回默认相机节点，触发 scene 重新渲染 → 用户看到正朝向
+            scnView.pointOfView = defaultCam
+            // 关再开 allowsCameraControl，让 defaultCameraController 重新生成一个干净的 pointOfView
+            // （这样后续拖拽/缩放仍正常工作，且视角落回默认）
+            scnView.allowsCameraControl = false
+            scnView.allowsCameraControl = true
+            scnView.defaultCameraController.interactionMode = .orbitAngleMapping
+            scnView.defaultCameraController.inertiaEnabled = true
         }
 
         /// 标准魔方配色（stickerless，与 facelet 颜色 id 严格对应）
@@ -193,6 +225,7 @@ struct Cube3DView: UIViewRepresentable {
         func buildCube(facelets: [Int]) {
             cubelets.values.forEach { $0.removeFromParentNode() }
             cubelets.removeAll()
+            highlightNodes.removeAll()  // 重建 cubelets 集合后高亮失效
             let h = CubeGeometry.three.coordHalf   // 3 阶 → 1，坐标 -1...1
             for x in -h...h {
                 for y in -h...h {
@@ -207,6 +240,7 @@ struct Cube3DView: UIViewRepresentable {
                 }
             }
             applyFacelets(facelets)
+            if let f = currentHighlightFace { applyHighlight(face: f) }
         }
 
         /// 创建一个 cubelet：黑色内芯 SCNBox + 最多 3 个 SCNPlane sticker 子节点
@@ -332,6 +366,7 @@ struct Cube3DView: UIViewRepresentable {
         func buildCube2x2(facelets: [Int]) {
             cubelets2x2.values.forEach { $0.removeFromParentNode() }
             cubelets2x2.removeAll()
+            highlightNodes.removeAll()  // 重建 cubelets 集合后高亮失效
             // 8 个角块坐标（3 阶 8 个角的 ±1 组合）
             let cornerSigns: [(Int, Int, Int)] = [
                 (-1, -1, -1), (1, -1, -1), (-1, 1, -1), (1, 1, -1),
@@ -345,6 +380,7 @@ struct Cube3DView: UIViewRepresentable {
                 cubelets2x2[key] = node
             }
             applyFacelets2x2(facelets)
+            if let f = currentHighlightFace { applyHighlight(face: f) }
         }
 
         /// 创建 2 阶角块：黑色内芯 + 3 个可见外表面 sticker（角块必暴露 3 面）
@@ -388,6 +424,52 @@ struct Cube3DView: UIViewRepresentable {
                 let dir = dirForFaceletIndex(idx3)   // 该面方向
                 guard let sticker = node.childNode(withName: "sticker_\(dir.rawValue)", recursively: false) else { continue }
                 sticker.geometry?.materials.first?.diffuse.contents = colorMap[colorId]
+            }
+        }
+
+        // MARK: - 选面高亮（按钮/手势选中时，对应面 cubelet 加半透明描边框）
+        /// 应用高亮：face=nil 时清空；非 nil 时给该面所有可见 cubelet 描边。
+        func applyHighlight(face: Face?) {
+            currentHighlightFace = face
+            // 先清空所有高亮节点
+            for n in highlightNodes.values { n.removeFromParentNode() }
+            highlightNodes.removeAll()
+            guard let face = face else { return }
+
+            // 该面在 3 阶坐标空间的方向（dirForFaceletIndex 反推）
+            let dir: FaceDir
+            switch face {
+            case .U: dir = .py
+            case .D: dir = .ny
+            case .L: dir = .nx
+            case .R: dir = .px
+            case .F: dir = .pz
+            case .B: dir = .nz
+            }
+            // 高亮色：iOS 系统蓝（与按钮主色一致）
+            let highlightColor = UIColor(red: 0.04, green: 0.52, blue: 1.0, alpha: 0.55)
+            // 该方向上的 cubelet 集合（按阶数分派）
+            let targets: [SCNNode]
+            if currentOrder == 2 {
+                targets = cubelets2x2.values.filter { $0.childNode(withName: "sticker_\(dir.rawValue)", recursively: false) != nil }
+            } else {
+                targets = cubelets.values.filter { $0.childNode(withName: "sticker_\(dir.rawValue)", recursively: false) != nil }
+            }
+            for node in targets {
+                // 描边：稍大一点的 wireframe box，框住 cubelet
+                let outline = SCNBox(width: 1.0, height: 1.0, length: 1.0, chamferRadius: 0.04)
+                let m = SCNMaterial()
+                m.diffuse.contents = highlightColor
+                m.lightingModel = .constant   // 不受光照影响，恒亮
+                m.transparency = 0.45
+                outline.materials = [m]
+                let outlineNode = SCNNode(geometry: outline)
+                outlineNode.name = "highlight_outline"
+                node.addChildNode(outlineNode)
+                if let key = node.name?.replacingOccurrences(of: "cubelet_", with: "")
+                                    .replacingOccurrences(of: "cubelet2_", with: "") {
+                    highlightNodes[key + "_" + dir.rawValue] = outlineNode
+                }
             }
         }
     }

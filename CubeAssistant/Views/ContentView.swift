@@ -124,15 +124,59 @@ struct HomeView: View {
             .padding(.top, 8)
             .padding(.bottom, 12)
 
+            // 转动方式切换（按钮 / 手势）—— 短横条切换器
+            HStack(spacing: 6) {
+                Image(systemName: "hand.tap")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                Picker("转动方式", selection: Binding(
+                    get: { session.turnMode },
+                    set: { session.setTurnMode($0) }
+                )) {
+                    Text("按钮").tag(TurnMode.buttons)
+                    Text("手势").tag(TurnMode.gestures)
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 220)
+                .tint(Color(red: 0.04, green: 0.52, blue: 1.0))
+                if session.turnMode == .gestures {
+                    Label("在魔方上左右滑", systemImage: "hand.draw")
+                        .font(.caption2)
+                        .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 8)
+
             ScrollView {
                 VStack(spacing: 14) {
                     timingCard
 
                     ZStack(alignment: .topTrailing) {
-                        Cube3DView(session: session)
+                        Cube3DView(session: session, selectedFace: selectedFace)
                             .frame(height: 280)
                             .clipShape(RoundedRectangle(cornerRadius: 24))
                             .shadow(color: .black.opacity(0.4), radius: 20, x: 0, y: 10)
+                            // 手势模式：在魔方上左右滑 = 当前面顺/逆时针
+                            .overlay(
+                                GeometryReader { _ in
+                                    if session.turnMode == .gestures {
+                                        Color.clear
+                                            .contentShape(Rectangle())
+                                            .gesture(
+                                                DragGesture(minimumDistance: 28)
+                                                    .onEnded { v in
+                                                        let dx = v.translation.width
+                                                        let dy = v.translation.height
+                                                        guard abs(dx) > abs(dy), abs(dx) > 30 else { return }
+                                                        let clockwise = dx < 0   // 左滑=顺时针
+                                                        applyTurn(clockwise: clockwise)
+                                                    }
+                                            )
+                                    }
+                                }
+                            )
 
                         // 回正视角按钮（浮动于魔方右上角）
                         Button {
@@ -454,6 +498,8 @@ struct HomeView: View {
 // MARK: - 学习页
 struct LearnView: View {
     @ObservedObject var session: CubeSession
+    /// 当前点开的课程（点开弹课程详情 sheet）
+    @State private var selectedCourse: CourseStage? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -606,35 +652,102 @@ struct LearnView: View {
                 .font(.caption)
                 .foregroundColor(.secondary)
 
-            ForEach(CourseStage.all, id: \.id) { stage in
-                HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(stage.color.opacity(0.15))
-                        Image(systemName: stage.icon)
-                            .foregroundColor(stage.color)
-                    }
-                    .frame(width: 36, height: 36)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(stage.title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(.white)
-                        Text(stage.goal)
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(.gray)
+            // 进度摘要（按原型："已学 N/N 课 · 推荐继续：XXX"）
+            HStack(spacing: 4) {
+                Text("已学 ").font(.caption).foregroundColor(.secondary)
+                Text("\(finishedCount)").font(.caption.weight(.bold)).foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                Text("/ \(CourseStage.all.count) 课").font(.caption).foregroundColor(.secondary)
+                if let next = nextCourse {
+                    Text(" · 推荐继续：").font(.caption).foregroundColor(.secondary)
+                    Text(next.title).font(.caption.weight(.semibold)).foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
                 }
-                .padding(10)
-                .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
+            }
+            .padding(.bottom, 2)
+
+            ForEach(CourseStage.all, id: \.id) { stage in
+                Button {
+                    selectedCourse = stage
+                } label: {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(stage.color.opacity(0.15))
+                            Image(systemName: stage.icon)
+                                .foregroundColor(stage.color)
+                        }
+                        .frame(width: 36, height: 36)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text("第 \(stage.id) 课")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundColor(stage.statusColor)
+                                if stage.progress >= 1 {
+                                    Text("· 已完成 ✓")
+                                        .font(.caption2)
+                                        .foregroundColor(.green)
+                                } else if stage.progress > 0 {
+                                    Text("· 进行中")
+                                        .font(.caption2)
+                                        .foregroundColor(stage.statusColor)
+                                }
+                            }
+                            Text(stage.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.white)
+                            Text(stage.goal)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                            // 进度条（按原型）
+                            HStack(spacing: 8) {
+                                GeometryReader { geo in
+                                    ZStack(alignment: .leading) {
+                                        RoundedRectangle(cornerRadius: 2)
+                                            .fill(Color.white.opacity(0.08))
+                                        RoundedRectangle(cornerRadius: 2)
+                                            .fill(stage.statusColor)
+                                            .frame(width: geo.size.width * CGFloat(stage.progress))
+                                    }
+                                }
+                                .frame(height: 4)
+                                Text("\(Int(stage.progress * 100))%")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 36, alignment: .trailing)
+                            }
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                    }
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 18).fill(.ultraThinMaterial))
+        .sheet(item: $selectedCourse) { stage in
+            CourseDetailSheet(stage: stage) { newProgress in
+                // 写入进度（持久化到 UserDefaults，按课程 id 存）
+                var map = (UserDefaults.standard.dictionary(forKey: "cube_course_progress") as? [String: Double]) ?? [:]
+                map[stage.idKey] = newProgress
+                UserDefaults.standard.set(map, forKey: "cube_course_progress")
+            }
+        }
+    }
+
+    /// 已学完的课数（progress >= 1）
+    private var finishedCount: Int {
+        CourseStage.all.filter { $0.progress >= 1 }.count
+    }
+
+    /// 下一节推荐课程（第一个未完成的）
+    private var nextCourse: CourseStage? {
+        CourseStage.all.first { $0.progress < 1 }
     }
 
     /// 帮助 FAQ：可折叠手风琴
@@ -799,15 +912,215 @@ struct CourseStage: Identifiable {
     let goal: String
     let icon: String
     let color: Color
+    /// 课程正文（多行段落，按原型分步讲解）
+    let content: String
+
+    /// 进度（0..1），从 UserDefaults 读，按课程 id 存
+    var progress: Double {
+        let map = (UserDefaults.standard.dictionary(forKey: "cube_course_progress") as? [String: Double]) ?? [:]
+        return map[idKey] ?? 0
+    }
+
+    /// 用于持久化的 key
+    var idKey: String { "course_\(id)" }
+
+    /// 状态色（进度对应状态的颜色）
+    var statusColor: Color {
+        if progress >= 1 { return .green }
+        if progress > 0 { return .orange }
+        return .secondary
+    }
 
     static var all: [CourseStage] {
         [
-            CourseStage(id: 1, title: "认识魔方", goal: "结构、面、转动记号入门", icon: "cube", color: .blue),
-            CourseStage(id: 2, title: "底层十字", goal: "拼出白色十字并对齐中心", icon: "plus", color: .green),
-            CourseStage(id: 3, title: "第一层", goal: "还原底层角块", icon: "square.grid.2x2.fill", color: .yellow),
-            CourseStage(id: 4, title: "第二层", goal: "还原中间层棱块", icon: "square.grid.3x2.fill", color: .orange),
-            CourseStage(id: 5, title: "顶层还原", goal: "顶面 + 顶层全部归位", icon: "star.fill", color: .purple),
+            CourseStage(id: 1, title: "认识魔方结构", goal: "中心块、棱块、角块的区别与转动方式", icon: "cube", color: .blue,
+                        content: """
+                        魔方由 6 个中心块、12 条棱块、8 个角块共 26 块组成（不计内核）。
+
+                        • 中心块：每个面正中 1 块，相对位置固定，决定这一面的颜色。
+                        • 棱块：两个面之间的块，每块 2 个贴纸；3 阶共 12 条。
+                        • 角块：三个面交汇处的块，每块 3 个贴纸；3 阶共 8 个。
+
+                        记号：U 上 / D 下 / L 左 / R 右 / F 前 / B 后。U 指顶面（面对你时最上），其他类推。
+
+                        不带后缀=顺时针 90°（从该面对外看），' 表示逆时针，2 表示转 180°。
+                        """),
+            CourseStage(id: 2, title: "底层十字", goal: "在底面拼出十字形（白色对黄色中心）", icon: "plus", color: .green,
+                        content: """
+                        目标：把底面（这里指 D 面，本课设白色为底色）拼出十字，并让十字的 4 条棱都和侧面中心同色。
+
+                        步骤要点：
+                        1. 先找带白色的棱块（4 条），把它们逐一翻到底面。
+                        2. 每条翻到底后，转两次 D（D2）或配 U'/U 让它对齐侧面中心色。
+                        3. 反复 4 次，直到 4 个白棱全部到底且侧面颜色对齐 → 底层十字完成。
+
+                        常见错误：翻下去时没注意侧面颜色 → 十字虽然成型但和侧面中心对不上。
+                        """),
+            CourseStage(id: 3, title: "底层角块还原", goal: "把四个底层角块归位（白色+两种侧面色）", icon: "square.grid.2x2.fill", color: .yellow,
+                        content: """
+                        目标：把 4 个底层角块（含白色）逐一放到底层对应位置，使三面颜色全部对齐中心。
+
+                        步骤要点：
+                        1. 找底层任一不在位的角块（看顶面或底层，含白色）。
+                        2. 把角块转到目标位置正上方（用 U/U'/U2 调整）。
+                        3. 做公式 R' D' R D（俗称「右勾」），直到角块归位。
+                        4. 重复直到 4 个角块全部归位。
+
+                        标记完成 → 进入下一课。
+                        """),
+            CourseStage(id: 4, title: "中层棱块归位", goal: "把 4 个中层棱块归位（无黄无白）", icon: "square.grid.3x2.fill", color: .orange,
+                        content: """
+                        目标：把不含黄/白的 4 个棱块归位到中层，使两面颜色都对齐对应中心。
+
+                        步骤要点：
+                        1. 顶层找无黄无白的棱块（4 个），看顶色应和某侧面中心一致。
+                        2. 用 U/U'/U2 把顶色对齐到对应侧面正上方。
+                        3. 看棱块的「左色」对的是 L 还是 R：
+                           • 左对 L：做 U' L' U L U F U' F'
+                           • 左对 R：做 U R U' R' U' F' U F
+                        4. 4 个棱块逐一完成。
+
+                        这一步练熟了中层的"手筋"就有了。
+                        """),
+            CourseStage(id: 5, title: "顶层还原", goal: "顶面十字 + 顶面还原 + 顶层全部归位", icon: "star.fill", color: .purple,
+                        content: """
+                        目标：把顶层（含黄色面）从「鱼眼」/「一字」/「拐角」逐步还原到完全归位。
+
+                        步骤要点：
+                        1. 顶面十字：F R U R' U' F'（小鱼→一字→十字）
+                        2. 顶面还原（黄面全黄）：R U R' U R U2 R'（左手法 / 右手法）
+                        3. 顶层棱块归位：R U R' U R U2 R'（顶棱定位）
+                        4. 顶层角块归位：U R U' L' U R' U' L（角块互换）
+
+                        完成后 → 全部还原，撒花 🎉
+
+                        提示：每个公式连做多次观察变化，是最快的记忆方法。
+                        """),
         ]
+    }
+}
+
+/// 课程详情 Sheet（点开某课后展示）
+struct CourseDetailSheet: View {
+    let stage: CourseStage
+    /// 标记完成回调（写进度）
+    let onProgressUpdate: (Double) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var currentProgress: Double = 0
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // 顶部彩色头图
+                    ZStack(alignment: .bottomLeading) {
+                        LinearGradient(colors: [stage.color.opacity(0.6), stage.color.opacity(0.2)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                            .frame(height: 140)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                        HStack(spacing: 12) {
+                            Image(systemName: stage.icon)
+                                .font(.system(size: 36, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 56, height: 56)
+                                .background(Circle().fill(.ultraThinMaterial))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("第 \(stage.id) 课").font(.caption.weight(.semibold)).foregroundColor(.white.opacity(0.85))
+                                Text(stage.title).font(.title2.weight(.bold)).foregroundColor(.white)
+                            }
+                            Spacer()
+                        }
+                        .padding(16)
+                    }
+
+                    // 学习目标
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("学习目标", systemImage: "target")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        Text(stage.goal)
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.8))
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
+
+                    // 课程正文
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("课程内容", systemImage: "text.alignleft")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        Text(stage.content)
+                            .font(.body)
+                            .foregroundColor(.white.opacity(0.85))
+                            .lineSpacing(4)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
+
+                    // 进度条 + 标记完成按钮
+                    VStack(spacing: 10) {
+                        HStack {
+                            Text("学习进度").font(.caption).foregroundColor(.secondary)
+                            Spacer()
+                            Text("\(Int(currentProgress * 100))%").font(.caption.weight(.semibold)).foregroundColor(stage.statusColor)
+                        }
+                        ProgressView(value: currentProgress)
+                            .tint(stage.statusColor)
+                        HStack(spacing: 10) {
+                            Button {
+                                currentProgress = max(0, currentProgress - 0.1)
+                                onProgressUpdate(currentProgress)
+                            } label: {
+                                Label("退一格", systemImage: "arrow.uturn.backward")
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                    .background(Capsule().fill(.ultraThinMaterial))
+                                    .foregroundColor(.white)
+                            }
+                            .buttonStyle(.plain)
+                            Button {
+                                if currentProgress < 1 { currentProgress = 1 } else { currentProgress = 0 }
+                                onProgressUpdate(currentProgress)
+                                if currentProgress >= 1 {
+                                    // 完成后自动关闭
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { dismiss() }
+                                }
+                            } label: {
+                                Label(currentProgress >= 1 ? "重学" : "标记完成",
+                                      systemImage: currentProgress >= 1 ? "arrow.counterclockwise" : "checkmark.circle.fill")
+                                    .font(.subheadline.weight(.semibold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 10)
+                                    .background(Capsule().fill(stage.statusColor))
+                                    .foregroundColor(.white)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
+
+                    Color.clear.frame(height: 16)
+                }
+                .padding(20)
+            }
+            .background(LinearGradient(colors: [Color(red: 0.04, green: 0.04, blue: 0.08), Color(red: 0.01, green: 0.01, blue: 0.03)],
+                                       startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+            .navigationTitle("课程详情")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { dismiss() }
+                }
+            }
+            .onAppear { currentProgress = stage.progress }
+        }
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -872,7 +1185,7 @@ struct FAQRow: View {
 
 
 
-// MARK: - 我的页
+// MARK: - 我的页（按原型 v4 重构）
 struct MineView: View {
     @ObservedObject var session: CubeSession
     /// 当前编辑的资料草稿（编辑弹层用）
@@ -880,12 +1193,14 @@ struct MineView: View {
     @State private var editingSignature = ""
     @State private var editingTier: GuideTier = .chinese
     @State private var showEditProfile = false
-    /// 历史管理弹确认
-    @State private var showClearConfirm = false
-    /// 数据备份：导出分享 / 导入选文件
-    @State private var showExportShare = false
-    @State private var showImportPicker = false
+    /// 子页 sheet 控制
+    @State private var showHistorySheet = false
+    @State private var showAchievementSheet = false
+    @State private var showBackupSheet = false
+    @State private var showAboutSheet = false
+    @State private var showFeedbackSheet = false
     @State private var backupMessage: String? = nil
+    @State private var showImportPicker = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -901,20 +1216,20 @@ struct MineView: View {
 
             ScrollView {
                 VStack(spacing: 14) {
-                    profileCard
-                    statsCard
-                    trendCard
-                    achievementsSection
-                    backupSection
-                    historySection
+                    profileCard         // 资料卡（按原型：头像+昵称+Lv+已学N课）
+                    statsCard           // 3 卡统计（还原次数/最佳成绩/学习天数）
+                    menuList            // 菜单列表（设置/历史/成就/备份/分享/反馈/关于）
                 }
                 .padding(.bottom, 20)
             }
         }
         .padding(.top, 8)
-        .sheet(isPresented: $showEditProfile) {
-            editProfileSheet
-        }
+        .sheet(isPresented: $showEditProfile) { editProfileSheet }
+        .sheet(isPresented: $showHistorySheet) { historySheet }
+        .sheet(isPresented: $showAchievementSheet) { achievementSheet }
+        .sheet(isPresented: $showBackupSheet) { backupSheet }
+        .sheet(isPresented: $showAboutSheet) { aboutSheet }
+        .sheet(isPresented: $showFeedbackSheet) { feedbackSheet }
         .sheet(isPresented: $showExportShare) {
             if let data = session.exportBackupData() {
                 ShareSheet(items: [backupFileURL(from: data)])
@@ -924,12 +1239,6 @@ struct MineView: View {
             DocumentPicker { url in
                 handleImport(url)
             }
-        }
-        .alert("清空全部还原记录？", isPresented: $showClearConfirm) {
-            Button("取消", role: .cancel) {}
-            Button("清空", role: .destructive) { session.clearHistory() }
-        } message: {
-            Text("此操作不可恢复")
         }
         .alert("数据备份", isPresented: Binding(
             get: { backupMessage != nil },
@@ -941,118 +1250,52 @@ struct MineView: View {
         }
     }
 
-    // MARK: 数据备份区块
-    private var backupSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.up.arrow.down.square")
-                    .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
-                Text("数据备份")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                Spacer()
-            }
-            Text("导出 JSON 备份成绩，换机/重装后可导入恢复")
-                .font(.caption)
-                .foregroundColor(.secondary)
-
-            HStack(spacing: 10) {
-                Button {
-                    showExportShare = true
-                } label: {
-                    Label("导出", systemImage: "square.and.arrow.up")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    showImportPicker = true
-                } label: {
-                    Label("导入", systemImage: "square.and.arrow.down")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Capsule().fill(.ultraThinMaterial))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 18).fill(.ultraThinMaterial))
-        .padding(.horizontal, 20)
-    }
-
-    /// 把导出数据写到临时文件，便于分享到「文件」App
-    private func backupFileURL(from data: Data) -> URL {
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("魔方学院备份_\(Self.fileTimestamp()).json")
-        try? data.write(to: url)
-        return url
-    }
-
-    private static func fileTimestamp() -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "zh_CN")
-        f.dateFormat = "yyyyMMdd_HHmmss"
-        return f.string(from: Date())
-    }
-
-    private func handleImport(_ url: URL) {
-        guard let data = try? Data(contentsOf: url) else {
-            backupMessage = "读取文件失败"
-            return
-        }
-        if let err = session.importBackupData(data) {
-            backupMessage = err
-        } else {
-            backupMessage = "导入成功，成绩与资料已恢复"
-        }
-    }
-
-    // MARK: 资料卡
+    // MARK: 资料卡（按原型：头像+昵称+Lv级别+已解锁N课+›）
     private var profileCard: some View {
         HStack(spacing: 14) {
-            // 头像占位：渐变圆 + 首字
             ZStack {
                 Circle()
                     .fill(LinearGradient(colors: [Color(red: 0.04, green: 0.52, blue: 1.0),
                                                   Color(red: 0.6, green: 0.2, blue: 1.0)],
                                          startPoint: .topLeading, endPoint: .bottomTrailing))
                 Text(String(session.profile.nickname.prefix(1)))
-                    .font(.system(size: 30, weight: .bold))
+                    .font(.system(size: 28, weight: .bold))
                     .foregroundColor(.white)
             }
             .frame(width: 64, height: 64)
 
-            VStack(alignment: .leading, spacing: 5) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(session.profile.nickname)
                     .font(.headline.weight(.semibold))
                     .foregroundColor(.white)
-                Text(session.profile.signature)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(currentLevelTitle)
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                    Text("· 已学 \(finishedCourseCount)/\(totalCourseCount) 课")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                if !session.profile.signature.isEmpty {
+                    Text(session.profile.signature)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
             }
 
             Spacer()
 
-            // 编辑资料
             Button {
                 editingNickname = session.profile.nickname
                 editingSignature = session.profile.signature
                 editingTier = session.profile.guideTier
                 showEditProfile = true
             } label: {
-                Image(systemName: "pencil")
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.7))
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.white.opacity(0.5))
                     .frame(width: 34, height: 34)
-                    .background(Circle().fill(Color.white.opacity(0.08)))
             }
             .buttonStyle(.plain)
         }
@@ -1061,22 +1304,41 @@ struct MineView: View {
         .padding(.horizontal, 20)
     }
 
-    // MARK: 战绩摘要
+    /// 当前等级标题（按总还原次数定档）
+    private var currentLevelTitle: String {
+        let n = session.totalSolves
+        if n >= 50 { return "Lv.4 速度之星" }
+        if n >= 10 { return "Lv.3 小有所成" }
+        if n >= 1 { return "Lv.2 初出茅庐" }
+        return "Lv.1 新手"
+    }
+
+    /// 已学完的课数（从 UserDefaults 读进度）
+    private var finishedCourseCount: Int {
+        let map = (UserDefaults.standard.dictionary(forKey: "cube_course_progress") as? [String: Double]) ?? [:]
+        return map.values.filter { $0 >= 1 }.count
+    }
+    private var totalCourseCount: Int { CourseStage.all.count }
+
+    // MARK: 3 卡片统计（按原型：还原次数/最佳成绩/学习天数）
     private var statsCard: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 10) {
             statItem("\(session.totalSolves)", "还原次数")
-            divider
-            statItem(session.bestTime.map(Self.timeText) ?? "--", "最快")
-            divider
-            statItem(session.averageTime.map(Self.timeText) ?? "--", "平均")
+            statItem(session.bestTime.map(Self.timeText) ?? "--", "最佳成绩")
+            statItem("\(uniqueSolveDays)", "学习天数")
         }
         .padding(.vertical, 14)
         .background(RoundedRectangle(cornerRadius: 20).fill(.ultraThinMaterial))
         .padding(.horizontal, 20)
     }
 
-    private var divider: some View {
-        Rectangle().fill(Color.white.opacity(0.1)).frame(width: 1, height: 34)
+    /// 有成绩的天数（按 YYYY-MM-DD 去重）
+    private var uniqueSolveDays: Int {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        var days = Set<String>()
+        for r in session.history { days.insert(f.string(from: r.date)) }
+        return days.count
     }
 
     private func statItem(_ value: String, _ label: String) -> some View {
@@ -1084,6 +1346,8 @@ struct MineView: View {
             Text(value)
                 .font(.system(.title3, design: .monospaced).weight(.bold))
                 .foregroundColor(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
             Text(label)
                 .font(.caption2)
                 .foregroundColor(.secondary)
@@ -1091,145 +1355,373 @@ struct MineView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: 成绩趋势（最近 20 次用时折线）
-    private var trendCard: some View {
-        let recent = session.history.prefix(20).map(\.duration)  // history 已按时间倒序，prefix 取最近
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Image(systemName: "chart.line.uptrend.xyaxis")
-                    .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
-                Text("成绩趋势")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                Spacer()
-                Text(recent.isEmpty ? "" : "最近 \(recent.count) 次")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-
-            if recent.count < 2 {
-                Text("完成 2 次以上还原后显示趋势")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-            } else {
-                TrendChart(durations: recent.reversed())  // 旧→新，从左到右
-                    .frame(height: 120)
-            }
+    // MARK: 菜单列表（按原型：设置/历史/收藏/成就/分享/反馈/关于）
+    private var menuList: some View {
+        VStack(spacing: 8) {
+            menuRow(icon: "gearshape.fill", title: "设置", desc: "档位、资料、主题", action: { showEditProfile = true })
+            menuRow(icon: "clock.arrow.circlepath", title: "还原历史", desc: "\(session.history.count) 条记录", action: { showHistorySheet = true })
+            menuRow(icon: "bookmark.fill", title: "我的收藏公式", desc: "暂未收藏", action: { backupMessage = "收藏功能即将上线" })
+            menuRow(icon: "trophy.fill", title: "成就", desc: "已解锁 \(unlockedAchievementCount)/\(Achievement.all.count) 项", action: { showAchievementSheet = true })
+            menuRow(icon: "square.and.arrow.up", title: "数据备份", desc: "导出/导入 JSON", action: { showBackupSheet = true })
+            menuRow(icon: "bubble.left.and.bubble.right.fill", title: "意见反馈", desc: "告诉我们哪里需要改进", action: { showFeedbackSheet = true })
+            menuRow(icon: "info.circle.fill", title: "关于魔方学院", desc: "v0.5 · 本地数据 · 无需联网", action: { showAboutSheet = true })
         }
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 18).fill(.ultraThinMaterial))
         .padding(.horizontal, 20)
     }
 
-    // MARK: 成就
-    private var achievementsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("成就")
-                .font(.headline)
-                .foregroundColor(.white)
-                .padding(.horizontal, 20)
-
-            ForEach(Achievement.all, id: \.self) { ach in
-                let state = ach.state(for: session)
-                HStack(spacing: 12) {
-                    Image(systemName: ach.icon)
-                        .font(.title3)
-                        .foregroundColor(state == .locked ? .gray : ach.color)
-                        .frame(width: 30)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(ach.title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(.white)
-                        Text(ach.subtitle(for: session))
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    switch state {
-                    case .unlocked:
-                        Text("已解锁")
-                            .font(.caption.weight(.semibold))
-                            .foregroundColor(.green)
-                    case .locked:
-                        Text("未解锁")
-                            .font(.caption2)
-                            .foregroundColor(.gray)
-                    }
+    @ViewBuilder
+    private func menuRow(icon: String, title: String, desc: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.18))
+                    Image(systemName: icon)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
                 }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
-                .padding(.horizontal, 20)
-                .opacity(state == .locked ? 0.55 : 1.0)
+                .frame(width: 32, height: 32)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                    Text(desc)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundColor(.gray)
             }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
+            .contentShape(Rectangle())
         }
-        .padding(.top, 4)
+        .buttonStyle(.plain)
     }
 
-    // MARK: 还原历史
-    private var historySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("还原历史")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                Spacer()
-                if !session.history.isEmpty {
-                    Button("清空") {
-                        showClearConfirm = true
-                    }
-                    .font(.caption)
-                    .foregroundColor(.red.opacity(0.8))
-                }
-            }
-            .padding(.horizontal, 20)
+    /// 已解锁的成就数
+    private var unlockedAchievementCount: Int {
+        Achievement.all.filter { $0.state(for: session) == .unlocked }.count
+    }
 
-            if session.history.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "trophy")
-                        .font(.largeTitle)
-                        .foregroundColor(.secondary)
-                    Text("还没有成绩")
-                        .foregroundColor(.secondary)
-                    Text("完成一次复原会自动记录")
+    // MARK: - 备份数据子页 sheet
+    @State private var showExportShare: Bool = false
+    @State private var showClearConfirm: Bool = false
+    private var backupSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 14) {
+                    Text("导出或导入 JSON 备份，换机/重装后可恢复")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
-                .background(RoundedRectangle(cornerRadius: 16).fill(.ultraThinMaterial))
-                .padding(.horizontal, 20)
-            } else {
-                ForEach(session.history) { rec in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(Self.timeText(rec.duration))
-                                .font(.system(.headline, design: .monospaced))
-                                .foregroundColor(.white)
-                            Text("\(rec.moves) 步 · \(Self.chineseDate(rec.date))")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
+                    HStack(spacing: 10) {
                         Button {
-                            session.deleteHistory(rec.id)
+                            showExportShare = true
                         } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.gray.opacity(0.6))
+                            Label("导出", systemImage: "square.and.arrow.up")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity).padding(.vertical, 12)
+                                .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
+                        }.buttonStyle(.plain)
+                        Button {
+                            showImportPicker = true
+                        } label: {
+                            Label("导入", systemImage: "square.and.arrow.down")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity).padding(.vertical, 12)
+                                .background(Capsule().fill(.ultraThinMaterial))
+                        }.buttonStyle(.plain)
+                    }.padding(.horizontal, 20)
+                    if !session.history.isEmpty {
+                        Button("清空全部还原记录", role: .destructive) {
+                            showClearConfirm = true
                         }
-                        .buttonStyle(.plain)
+                        .padding(.top, 20)
                     }
-                    .padding(14)
-                    .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
-                    .padding(.horizontal, 20)
+                    Color.clear.frame(height: 20)
+                }
+                .padding(.top, 20)
+            }
+            .background(LinearGradient(
+                colors: [Color(red: 0.04, green: 0.04, blue: 0.08), Color(red: 0.01, green: 0.01, blue: 0.03)],
+                startPoint: .top, endPoint: .bottom
+            ).ignoresSafeArea())
+            .navigationTitle("数据备份")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { showBackupSheet = false }
+                }
+            }
+            .alert("清空全部还原记录？", isPresented: $showClearConfirm) {
+                Button("取消", role: .cancel) {}
+                Button("清空", role: .destructive) { session.clearHistory() }
+            } message: { Text("此操作不可恢复") }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    // MARK: - 还原历史子页 sheet
+    private var historySheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 10) {
+                    if session.history.isEmpty {
+                        VStack(spacing: 8) {
+                            Image(systemName: "trophy").font(.largeTitle).foregroundColor(.secondary)
+                            Text("还没有成绩").foregroundColor(.secondary)
+                            Text("完成一次复原会自动记录").font(.caption).foregroundColor(.secondary)
+                        }.frame(maxWidth: .infinity).padding(.vertical, 32)
+                    } else {
+                        ForEach(session.history) { rec in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(Self.timeText(rec.duration))
+                                        .font(.system(.headline, design: .monospaced))
+                                        .foregroundColor(.white)
+                                    Text("\(rec.moves) 步 · \(Self.chineseDate(rec.date))")
+                                        .font(.caption2).foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                Button {
+                                    session.deleteHistory(rec.id)
+                                } label: { Image(systemName: "xmark.circle.fill").foregroundColor(.gray.opacity(0.6)) }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(14)
+                            .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
+                            .padding(.horizontal, 20)
+                        }
+                    }
+                    if session.history.count >= 2 {
+                        // 内嵌趋势图
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("成绩趋势（最近 20 次）").font(.caption).foregroundColor(.secondary)
+                            TrendChart(durations: session.history.prefix(20).map(\.duration).reversed())
+                                .frame(height: 100)
+                        }
+                        .padding(16)
+                        .background(RoundedRectangle(cornerRadius: 18).fill(.ultraThinMaterial))
+                        .padding(.horizontal, 20)
+                    }
+                    Color.clear.frame(height: 20)
+                }
+                .padding(.top, 8)
+            }
+            .background(LinearGradient(
+                colors: [Color(red: 0.04, green: 0.04, blue: 0.08), Color(red: 0.01, green: 0.01, blue: 0.03)],
+                startPoint: .top, endPoint: .bottom
+            ).ignoresSafeArea())
+            .navigationTitle("还原历史")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { showHistorySheet = false }
                 }
             }
         }
-        .padding(.top, 4)
+        .preferredColorScheme(.dark)
     }
 
-    // MARK: 编辑资料弹层
+    // MARK: - 成就子页 sheet（含进度条）
+    private var achievementSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 10) {
+                    // 成就概览
+                    HStack(spacing: 10) {
+                        summaryItem("\(unlockedAchievementCount)", "已解锁", color: Color(red: 0.04, green: 0.52, blue: 1.0))
+                        summaryItem("\(Achievement.all.count)", "全部成就", color: .white)
+                        summaryItem(currentLevelTitle, "当前等级", color: .yellow)
+                    }
+                    .padding(.horizontal, 20)
+                    ForEach(Achievement.all, id: \.self) { ach in
+                        let state = ach.state(for: session)
+                        let progress = achievementProgress(ach)
+                        HStack(spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(state == .unlocked ? ach.color.opacity(0.25) : Color.white.opacity(0.05))
+                                Image(systemName: ach.icon)
+                                    .font(.title3)
+                                    .foregroundColor(state == .unlocked ? ach.color : .gray)
+                            }
+                            .frame(width: 36, height: 36)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(ach.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundColor(.white)
+                                Text(ach.subtitle(for: session))
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                                // 进度条（按原型：部分成就显示进度）
+                                if state != .unlocked, progress > 0 {
+                                    HStack(spacing: 6) {
+                                        GeometryReader { geo in
+                                            ZStack(alignment: .leading) {
+                                                RoundedRectangle(cornerRadius: 2).fill(Color.white.opacity(0.08))
+                                                RoundedRectangle(cornerRadius: 2).fill(ach.color)
+                                                    .frame(width: geo.size.width * progress)
+                                            }
+                                        }
+                                        .frame(height: 3)
+                                        Text("\(Int(progress * 100))%").font(.caption2).foregroundColor(.secondary)
+                                    }
+                                }
+                            }
+                            Spacer()
+                            if state == .unlocked {
+                                Text("已解锁 ✓")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundColor(.green)
+                            } else {
+                                Text("未解锁").font(.caption2).foregroundColor(.gray)
+                            }
+                        }
+                        .padding(12)
+                        .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
+                        .padding(.horizontal, 20)
+                    }
+                    Color.clear.frame(height: 20)
+                }
+                .padding(.top, 8)
+            }
+            .background(LinearGradient(
+                colors: [Color(red: 0.04, green: 0.04, blue: 0.08), Color(red: 0.01, green: 0.01, blue: 0.03)],
+                startPoint: .top, endPoint: .bottom
+            ).ignoresSafeArea())
+            .navigationTitle("成就")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { showAchievementSheet = false }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func summaryItem(_ value: String, _ label: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.system(.headline, design: .rounded).weight(.bold))
+                .foregroundColor(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+            Text(label).font(.caption2).foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 14)
+        .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
+    }
+
+    /// 成就进度（0..1）— 累计还原类按比例，进度类的为 1
+    private func achievementProgress(_ ach: Achievement) -> Double {
+        switch ach {
+        case .firstSolve: return min(1, Double(session.totalSolves))
+        case .tenSolves:  return min(1, Double(session.totalSolves) / 10.0)
+        case .fiftySolves: return min(1, Double(session.totalSolves) / 50.0)
+        case .underMinute:
+            if let best = session.bestTime { return best < 60 ? 1 : min(1, 60.0 / best) }
+            return 0
+        }
+    }
+
+    // MARK: - 关于子页 sheet
+    private var aboutSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 14) {
+                    VStack(spacing: 6) {
+                        Text("魔方学院")
+                            .font(.title.weight(.bold))
+                            .foregroundColor(.white)
+                        Text("v0.5 · 一夜冲刺版")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 24)
+                    Group {
+                        infoRow("定位", "魔方练习者的私人教练")
+                        infoRow("支持阶数", "2 阶 / 3 阶（4-10 阶规划中）")
+                        infoRow("数据", "本地存储，不联网")
+                        infoRow("识别", "拍照 + HSV 颜色识别")
+                        infoRow("求解", "Kociemba 两阶段（3 阶） / 角块 BFS（2 阶）")
+                        infoRow("开发", "杰哥 + 助手")
+                    }
+                    .padding(.horizontal, 20)
+                    Color.clear.frame(height: 20)
+                }
+            }
+            .background(LinearGradient(
+                colors: [Color(red: 0.04, green: 0.04, blue: 0.08), Color(red: 0.01, green: 0.01, blue: 0.03)],
+                startPoint: .top, endPoint: .bottom
+            ).ignoresSafeArea())
+            .navigationTitle("关于")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { showAboutSheet = false }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func infoRow(_ k: String, _ v: String) -> some View {
+        HStack(alignment: .top) {
+            Text(k).font(.caption).foregroundColor(.secondary).frame(width: 70, alignment: .leading)
+            Text(v).font(.subheadline).foregroundColor(.white)
+            Spacer()
+        }.padding(.vertical, 6)
+    }
+
+    // MARK: - 反馈子页 sheet
+    private var feedbackSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 14) {
+                    Text("感谢你愿意反馈！这会直接帮到我们改进 App。")
+                        .font(.caption).foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("反馈方式").font(.caption).foregroundColor(.secondary)
+                        Text("1) 加 WorkBuddy 内置客服 1v1")
+                        Text("2) 邮箱: feedback@...")
+                        Text("3) 公众号「杰哥有话说」留言")
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.white)
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
+                    .padding(.horizontal, 20)
+                    Color.clear.frame(height: 20)
+                }
+                .padding(.top, 12)
+            }
+            .background(LinearGradient(
+                colors: [Color(red: 0.04, green: 0.04, blue: 0.08), Color(red: 0.01, green: 0.01, blue: 0.03)],
+                startPoint: .top, endPoint: .bottom
+            ).ignoresSafeArea())
+            .navigationTitle("意见反馈")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { showFeedbackSheet = false }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    // MARK: - 资料编辑 sheet（与原 MineView 行为兼容）
     private var editProfileSheet: some View {
         VStack(spacing: 20) {
             Text("编辑资料")
@@ -1241,7 +1733,6 @@ struct MineView: View {
                 .textFieldStyle(.roundedBorder)
                 .padding(.horizontal, 24)
 
-            // 转动提示档位（新手图卡 / 中文 / 专业）
             VStack(alignment: .leading, spacing: 6) {
                 Text("转动提示档位")
                     .font(.caption)
@@ -1280,15 +1771,36 @@ struct MineView: View {
         .presentationDetents([.height(340)])
     }
 
-    /// 中文日期格式，如「2026年9月8日 15:32」
+    /// 把导出数据写到临时文件，便于分享到「文件」App
+    private func backupFileURL(from data: Data) -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("魔方学院备份_\(Self.fileTimestamp()).json")
+        try? data.write(to: url)
+        return url
+    }
+    private static func fileTimestamp() -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "yyyyMMdd_HHmmss"
+        return f.string(from: Date())
+    }
+    private func handleImport(_ url: URL) {
+        guard let data = try? Data(contentsOf: url) else {
+            backupMessage = "读取文件失败"; return
+        }
+        if let err = session.importBackupData(data) {
+            backupMessage = err
+        } else {
+            backupMessage = "导入成功，成绩与资料已恢复"
+        }
+    }
+
     static func chineseDate(_ d: Date) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "zh_CN")
         f.dateFormat = "yyyy年M月d日 HH:mm"
         return f.string(from: d)
     }
-
-    /// 时间文本（mm:ss.cc）
     static func timeText(_ t: TimeInterval) -> String { formatSolveTime(t) }
 }
 
