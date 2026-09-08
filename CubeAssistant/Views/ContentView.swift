@@ -152,6 +152,10 @@ struct HomeView: View {
                 .padding(.bottom, 40)
             }
         }
+        // 虚拟模式：转完自动停表结算后，本地计时态需同步复位（否则仍显示「暂停」）
+        .onChange(of: session.isTiming) { nowTiming in
+            if !nowTiming && timingState == .running { timingState = .idle }
+        }
     }
 
     // MARK: 计时卡（三态）
@@ -431,12 +435,7 @@ struct HomeView: View {
         }
     }
 
-    static func formatTime(_ t: TimeInterval) -> String {
-        let m = Int(t) / 60
-        let s = Int(t) % 60
-        let cs = Int((t - floor(t)) * 100)
-        return String(format: "%02d:%02d.%02d", m, s, cs)
-    }
+    static func formatTime(_ t: TimeInterval) -> String { formatSolveTime(t) }
 }
 
 // MARK: - 学习页
@@ -1034,12 +1033,7 @@ struct MineView: View {
     }
 
     /// 时间文本（mm:ss.cc）
-    static func timeText(_ t: TimeInterval) -> String {
-        let m = Int(t) / 60
-        let s = Int(t) % 60
-        let cs = Int((t - floor(t)) * 100)
-        return String(format: "%d:%02d.%02d", m, s, cs)
-    }
+    static func timeText(_ t: TimeInterval) -> String { formatSolveTime(t) }
 }
 
 /// 成就定义（三态：已解锁 / 未解锁；当前用两态，进度后续迭代）

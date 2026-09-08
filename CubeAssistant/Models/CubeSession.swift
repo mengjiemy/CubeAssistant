@@ -100,6 +100,7 @@ final class CubeSession: NSObject, ObservableObject {
         clearSolve()
         stopTimerUI()
         accumulatedElapsed = 0
+        message = "已还原为初始状态"
     }
 
     /// 随机打乱（默认 25 步，WCA 风格）
@@ -253,10 +254,12 @@ final class CubeSession: NSObject, ObservableObject {
         }
         isSolving = true
         message = nil
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
-            let session = SolveSession(startFacelets: facelets)
-            Task { @MainActor in
+        // 关键：后台线程只做「纯计算」——facelets 是值类型（[Int]），在主线程取值后
+        // 跨线程传递安全；不在后台闭包捕获 @MainActor 的 self，避免隔离边界隐患。
+        DispatchQueue.global(qos: .userInitiated).async {
+            let session = SolveSession(startFacelets: facelets)   // 可能首次构建 Kociemba BFS 表，耗时数百 ms~秒级
+            Task { @MainActor [weak self] in
+                guard let self else { return }
                 self.isSolving = false
                 if let session {
                     self.solveSession = session
@@ -367,12 +370,19 @@ final class CubeSession: NSObject, ObservableObject {
 
     // MARK: - 格式化
 
-    static func format(_ t: TimeInterval) -> String {
-        let m = Int(t) / 60
-        let s = Int(t) % 60
-        let cs = Int((t - floor(t)) * 100)
-        return String(format: "%d:%02d.%02d", m, s, cs)
-    }
+    /// 统一用时格式（mm:ss.cc，分不补零）。全 App 唯一权威实现。
+    static func format(_ t: TimeInterval) -> String { formatSolveTime(t) }
+}
+
+/// 全 App 统一的计时格式（mm:ss.cc，分不补零）。
+/// 之前散落在 CubeSession / HomeView / MineView / HistoryView 四处、且「分是否补零」
+/// 不一致（`%d:%02d` vs `%02d:%02d`），统一收敛到此处，杜绝同一成绩显示两样。
+func formatSolveTime(_ t: TimeInterval) -> String {
+    let total = Int(t.rounded(.down))
+    let m = total / 60
+    let s = total % 60
+    let cs = Int((t - floor(t)) * 100)
+    return String(format: "%d:%02d.%02d", m, s, cs)
 }
 
 /// 一次复原成绩记录（本地持久化，结构对齐旧 CloudStore 展示）。

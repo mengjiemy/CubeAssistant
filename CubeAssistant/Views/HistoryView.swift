@@ -45,10 +45,5 @@ struct HistoryView: View {
         .preferredColorScheme(.dark)
     }
 
-    private func formatTime(_ t: TimeInterval) -> String {
-        let m = Int(t) / 60
-        let s = Int(t) % 60
-        let cs = Int((t - floor(t)) * 100)
-        return String(format: "%02d:%02d.%02d", m, s, cs)
-    }
+    private func formatTime(_ t: TimeInterval) -> String { formatSolveTime(t) }
 }
