@@ -71,6 +71,11 @@ struct Cube3DView: UIViewRepresentable {
 
     func updateUIView(_ uiView: SCNView, context: Context) {
         let co = context.coordinator
+        // 相机复位：token 变化即回正视角
+        if session.cameraResetToken != co.lastCameraResetToken {
+            co.lastCameraResetToken = session.cameraResetToken
+            co.resetCamera()
+        }
         let facelets = session.cube.facelets
         guard facelets != co.lastFacelets else { return }
         co.lastFacelets = facelets
@@ -87,6 +92,16 @@ struct Cube3DView: UIViewRepresentable {
         /// cubelets[key] = 块节点；key 格式 "x_y_z"
         var cubelets: [String: SCNNode] = [:]
         var lastFacelets: [Int] = []
+        var lastCameraResetToken: Int = 0
+
+        /// 回正相机到默认视角（顶面朝上、前面朝前）
+        func resetCamera() {
+            guard let camera = cameraNode else { return }
+            camera.position = SCNVector3(4.5, 4.0, 6.5)
+            camera.look(at: SCNVector3(0, 0, 0))
+            // 同步重置内置相机控制器状态，避免惯性残留
+            scnView?.defaultCameraController.stopInertia()
+        }
 
         /// 标准魔方配色（stickerless，与 facelet 颜色 id 严格对应）
         let colorMap: [UIColor] = [

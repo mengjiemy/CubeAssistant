@@ -30,6 +30,9 @@ final class CubeSession: NSObject, ObservableObject {
     /// 本地历史成绩（UserDefaults 持久化）
     @Published private(set) var history: [SolveRecord] = []
 
+    /// 相机复位令牌：自增一次，3D 视图据此把视角回正到默认朝向。
+    @Published private(set) var cameraResetToken: Int = 0
+
     private var timer: Timer?
     /// 暂停前累计的用时（秒）。支持「暂停→继续」跨段累计。
     private var accumulatedElapsed: TimeInterval = 0
@@ -240,6 +243,11 @@ final class CubeSession: NSObject, ObservableObject {
     func clearSolve() {
         solveSession = nil
         message = nil
+    }
+
+    /// 回正 3D 视角（自增令牌，Cube3DView 检测到变化即复位相机）
+    func resetCamera() {
+        cameraResetToken += 1
     }
 
     // MARK: - Timer（UI 显示驱动）

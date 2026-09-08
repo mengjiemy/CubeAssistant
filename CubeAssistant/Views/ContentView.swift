@@ -115,10 +115,26 @@ struct HomeView: View {
                 VStack(spacing: 14) {
                     timingCard
 
-                    Cube3DView(session: session)
-                        .frame(height: 280)
-                        .clipShape(RoundedRectangle(cornerRadius: 24))
-                        .shadow(color: .black.opacity(0.4), radius: 20, x: 0, y: 10)
+                    ZStack(alignment: .topTrailing) {
+                        Cube3DView(session: session)
+                            .frame(height: 280)
+                            .clipShape(RoundedRectangle(cornerRadius: 24))
+                            .shadow(color: .black.opacity(0.4), radius: 20, x: 0, y: 10)
+
+                        // 回正视角按钮（浮动于魔方右上角）
+                        Button {
+                            session.resetCamera()
+                        } label: {
+                            Image(systemName: "scope")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 40, height: 40)
+                                .background(Circle().fill(.ultraThinMaterial))
+                                .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(12)
+                    }
 
                     // 提示语固定占位，避免出现/消失导致界面跳动
                     Text(session.message ?? " ")
@@ -262,9 +278,14 @@ struct HomeView: View {
     // MARK: 转层控件（选面 + 顺/逆时针，方向固定正确）
     private var turnControls: some View {
         VStack(spacing: 10) {
-            // 6 面选层（选中蓝框高亮），顺序「上下左右前后」，一排放下
-            HStack(spacing: 6) {
-                ForEach([Face.U, Face.D, Face.L, Face.R, Face.F, Face.B], id: \.self) { f in
+            // 6 面选层（选中蓝框高亮），两排：上左前 / 下右后，字母+中文对照公式
+            HStack(spacing: 8) {
+                ForEach([Face.U, Face.L, Face.F], id: \.self) { f in
+                    faceButton(f)
+                }
+            }
+            HStack(spacing: 8) {
+                ForEach([Face.D, Face.R, Face.B], id: \.self) { f in
                     faceButton(f)
                 }
             }
@@ -283,22 +304,37 @@ struct HomeView: View {
         return Button {
             selectedFace = f
         } label: {
-            Text(faceLabel(f))
-                .font(.subheadline.weight(.semibold))
-                .foregroundColor(selected ? .white : .white.opacity(0.6))
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 9)
-                .background(
-                    Capsule().fill(selected ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.white.opacity(0.06))
-                )
-                .overlay(
-                    Capsule().stroke(selected ? Color(red: 0.3, green: 0.7, blue: 1.0) : Color.clear, lineWidth: 2)
-                )
+            VStack(spacing: 1) {
+                Text(faceLetter(f))
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                Text(faceName(f))
+                    .font(.caption2)
+            }
+            .foregroundColor(selected ? .white : .white.opacity(0.6))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+            .background(
+                Capsule().fill(selected ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.white.opacity(0.06))
+            )
+            .overlay(
+                Capsule().stroke(selected ? Color(red: 0.3, green: 0.7, blue: 1.0) : Color.clear, lineWidth: 2)
+            )
         }
         .buttonStyle(.plain)
     }
 
-    private func faceLabel(_ f: Face) -> String {
+    private func faceLetter(_ f: Face) -> String {
+        switch f {
+        case .U: return "U"
+        case .D: return "D"
+        case .L: return "L"
+        case .R: return "R"
+        case .F: return "F"
+        case .B: return "B"
+        }
+    }
+
+    private func faceName(_ f: Face) -> String {
         switch f {
         case .U: return "上"
         case .D: return "下"
