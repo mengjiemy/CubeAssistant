@@ -24,6 +24,8 @@ struct CameraScanView: View {
     @State private var draft: [Int]? = nil   // 当前面识别草稿（可编辑）
     @State private var showSourceChoice = false
     @State private var note = "选择一面，拍照识别 9 个贴纸"
+    @State private var editingCell: Int? = nil   // 正在改色的色块索引（弹出色盘）
+    @State private var showColorSheet = false
 
     private let faceOrder: [Face] = [.U, .R, .F, .D, .L, .B]
     private let faceLabel: [Face: String] = [.U: "上 U", .R: "右 R", .F: "前 F", .D: "下 D", .L: "左 L", .B: "后 B"]
@@ -70,12 +72,15 @@ struct CameraScanView: View {
                     // 编辑网格
                     if let d = draft {
                         VStack(spacing: 8) {
-                            Text("点色块可改色校正").font(.caption).foregroundColor(.secondary)
+                            Text("点色块可直接选色校正").font(.caption).foregroundColor(.secondary)
                             ForEach(0..<3, id: \.self) { r in
                                 HStack(spacing: 8) {
                                     ForEach(0..<3, id: \.self) { c in
                                         let idx = r * 3 + c
-                                        Button { draft?[idx] = (draft![idx] + 1) % 6 } label: {
+                                        Button {
+                                            editingCell = idx
+                                            showColorSheet = true
+                                        } label: {
                                             Rectangle().fill(stickerColor(d[idx]))
                                                 .frame(width: 64, height: 64).cornerRadius(8)
                                                 .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.2)))
@@ -125,8 +130,44 @@ struct CameraScanView: View {
                     }
                 }
             }
+            .sheet(isPresented: $showColorSheet) {
+                colorPickerSheet
+                    .presentationDetents([.height(220)])
+            }
         }
         .preferredColorScheme(.dark)
+    }
+
+    /// 弹出色盘：6 种标准色直接点选
+    private var colorPickerSheet: some View {
+        VStack(spacing: 16) {
+            Text("选择颜色").font(.headline)
+            HStack(spacing: 12) {
+                ForEach(0..<6, id: \.self) { id in
+                    Button {
+                        if let idx = editingCell {
+                            draft?[idx] = id
+                        }
+                        showColorSheet = false
+                    } label: {
+                        VStack(spacing: 4) {
+                            Rectangle().fill(stickerColor(id))
+                                .frame(width: 44, height: 44).cornerRadius(8)
+                            Text(colorName(id)).font(.caption2).foregroundColor(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal)
+            Spacer()
+        }
+        .padding(.top, 20)
+        .preferredColorScheme(.dark)
+    }
+
+    private func colorName(_ id: Int) -> String {
+        ["白", "红", "绿", "黄", "橙", "蓝"][id]
     }
 
     private func finish() {

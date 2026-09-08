@@ -78,19 +78,8 @@ struct ContentView: View {
 // MARK: - 主页
 struct HomeView: View {
     @ObservedObject var session: CubeSession
-    @State private var selectedLayer: Layer = .top
+    @State private var selectedFace: Face = .U
     @State private var timingState: TimingState = .idle
-
-    enum Layer: String, CaseIterable {
-        case top = "顶层", middle = "中层", bottom = "底层"
-        var icon: String {
-            switch self {
-            case .top: return "arrow.up.circle"
-            case .middle: return "equal.circle"
-            case .bottom: return "arrow.down.circle"
-            }
-        }
-    }
 
     /// 计时三态：未开始 → 进行中 → 暂停
     enum TimingState: Equatable {
@@ -131,13 +120,15 @@ struct HomeView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 24))
                         .shadow(color: .black.opacity(0.4), radius: 20, x: 0, y: 10)
 
-                    if let msg = session.message {
-                        Text(msg)
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.6))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 20)
-                    }
+                    // 提示语固定占位，避免出现/消失导致界面跳动
+                    Text(session.message ?? " ")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .padding(.horizontal, 20)
+                        .frame(height: 20)
 
                     turnControls
                     actionRow
@@ -268,35 +259,59 @@ struct HomeView: View {
         }
     }
 
-    // MARK: 转层控件
+    // MARK: 转层控件（选面 + 顺/逆时针，方向固定正确）
     private var turnControls: some View {
         VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                ForEach(Layer.allCases, id: \.self) { layer in
-                    Button {
-                        selectedLayer = layer
-                    } label: {
-                        Text(layer.rawValue)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(selectedLayer == layer ? .white : .white.opacity(0.6))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(
-                                Capsule().fill(selectedLayer == layer ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.white.opacity(0.06))
-                            )
-                    }
-                    .buttonStyle(.plain)
+            // 6 面选层（选中蓝框高亮）
+            HStack(spacing: 8) {
+                ForEach([Face.U, Face.R, Face.F], id: \.self) { f in
+                    faceButton(f)
+                }
+            }
+            HStack(spacing: 8) {
+                ForEach([Face.D, Face.L, Face.B], id: \.self) { f in
+                    faceButton(f)
                 }
             }
 
+            // 顺 / 逆时针
             HStack(spacing: 8) {
-                turnButton("向左横转", "arrow.left") { applyMove(.horizontalLeft) }
-                turnButton("向右横转", "arrow.right") { applyMove(.horizontalRight) }
-                turnButton("向上竖转", "arrow.up") { applyMove(.verticalUp) }
-                turnButton("向下竖转", "arrow.down") { applyMove(.verticalDown) }
+                turnButton("逆时针", "arrow.counterclockwise") { applyTurn(clockwise: false) }
+                turnButton("顺时针", "arrow.clockwise") { applyTurn(clockwise: true) }
             }
         }
         .padding(.horizontal, 20)
+    }
+
+    private func faceButton(_ f: Face) -> some View {
+        let selected = selectedFace == f
+        return Button {
+            selectedFace = f
+        } label: {
+            Text(faceLabel(f))
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(selected ? .white : .white.opacity(0.6))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule().fill(selected ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.white.opacity(0.06))
+                )
+                .overlay(
+                    Capsule().stroke(selected ? Color(red: 0.3, green: 0.7, blue: 1.0) : Color.clear, lineWidth: 2)
+                )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func faceLabel(_ f: Face) -> String {
+        switch f {
+        case .U: return "上 U"
+        case .D: return "下 D"
+        case .L: return "左 L"
+        case .R: return "右 R"
+        case .F: return "前 F"
+        case .B: return "后 B"
+        }
     }
 
     private func turnButton(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
@@ -336,8 +351,8 @@ struct HomeView: View {
             .buttonStyle(.plain)
 
             Button { session.undo() } label: {
-                Image(systemName: "arrow.uturn.backward")
-                    .font(.subheadline.weight(.medium))
+                Label("撤销", systemImage: "arrow.uturn.backward")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
@@ -349,8 +364,8 @@ struct HomeView: View {
             .opacity(session.canUndo ? 1.0 : 0.35)
 
             Button { session.reset() } label: {
-                Image(systemName: "arrow.counterclockwise")
-                    .font(.subheadline.weight(.medium))
+                Label("还原", systemImage: "arrow.counterclockwise")
+                    .font(.subheadline.weight(.semibold))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
@@ -362,31 +377,26 @@ struct HomeView: View {
         .padding(.horizontal, 20)
     }
 
-    private func applyMove(_ dir: TurnDirection) {
-        let move: Move = resolveMove(layer: selectedLayer, direction: dir)
+    private func applyTurn(clockwise: Bool) {
+        let move = resolveMove(face: selectedFace, clockwise: clockwise)
         _ = session.apply(move)
     }
 
-    enum TurnDirection {
-        case horizontalLeft, horizontalRight, verticalUp, verticalDown
-    }
-
-    /// 选层 + 方向 → 标准 Move。
-    /// 横转=顶层/中层/底层水平转(U/U'，中层用U2)，竖转=前后竖转(F/F')
-    private func resolveMove(layer: Layer, direction: TurnDirection) -> Move {
-        switch (layer, direction) {
-        case (.top, .horizontalLeft):    return .U
-        case (.top, .horizontalRight):   return .Up
-        case (.top, .verticalUp):       return .F
-        case (.top, .verticalDown):     return .Fp
-        case (.middle, .horizontalLeft): return .U2
-        case (.middle, .horizontalRight):return .U2
-        case (.middle, .verticalUp):    return .F
-        case (.middle, .verticalDown):  return .Fp
-        case (.bottom, .horizontalLeft): return .D
-        case (.bottom, .horizontalRight):return .Dp
-        case (.bottom, .verticalUp):    return .F
-        case (.bottom, .verticalDown):  return .Fp
+    /// 选面 + 顺/逆时针 → 标准 Move。方向与标准魔方记号一致（固定世界坐标）。
+    private func resolveMove(face: Face, clockwise: Bool) -> Move {
+        switch (face, clockwise) {
+        case (.U, true):  return .U
+        case (.U, false): return .Up
+        case (.D, true):  return .D
+        case (.D, false): return .Dp
+        case (.L, true):  return .L
+        case (.L, false): return .Lp
+        case (.R, true):  return .R
+        case (.R, false): return .Rp
+        case (.F, true):  return .F
+        case (.F, false): return .Fp
+        case (.B, true):  return .B
+        case (.B, false): return .Bp
         }
     }
 
@@ -501,7 +511,7 @@ struct MineView: View {
                                 Text("\(rec.moves) 步")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
-                                Text(rec.date, style: .date)
+                                Text(Self.chineseDate(rec.date))
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
@@ -515,5 +525,13 @@ struct MineView: View {
             }
         }
         .padding(.top, 8)
+    }
+
+    /// 中文日期格式，如「2026年9月8日 15:32」
+    static func chineseDate(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "yyyy年M月d日 HH:mm"
+        return f.string(from: d)
     }
 }

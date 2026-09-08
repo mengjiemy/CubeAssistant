@@ -21,7 +21,7 @@ struct Cube3DView: UIViewRepresentable {
         scnView.autoenablesDefaultLighting = false
         scnView.backgroundColor = .clear
         scnView.antialiasingMode = .multisampling4X
-        scnView.defaultCameraController.interactionMode = .orbitTurntable
+        scnView.defaultCameraController.interactionMode = .orbitAngleMapping
         scnView.defaultCameraController.inertiaEnabled = true
 
         let scene = SCNScene()
