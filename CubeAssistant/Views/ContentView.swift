@@ -985,6 +985,35 @@ struct CourseStage: Identifiable {
         return .secondary
     }
 
+    /// 是否已收藏（UserDefaults 持久化，key 与进度同源）
+    var isFavorite: Bool {
+        let map = (UserDefaults.standard.dictionary(forKey: CourseStage.favoriteKey) as? [String: Bool]) ?? [:]
+        return map[idKey] ?? false
+    }
+
+    /// 切换收藏状态（返回新状态）
+    @discardableResult
+    func toggleFavorite() -> Bool {
+        var map = (UserDefaults.standard.dictionary(forKey: CourseStage.favoriteKey) as? [String: Bool]) ?? [:]
+        let newVal = !(map[idKey] ?? false)
+        map[idKey] = newVal
+        UserDefaults.standard.set(map, forKey: CourseStage.favoriteKey)
+        return newVal
+    }
+
+    /// 收藏持久化 key
+    static let favoriteKey = "cube_favorite_formulas"
+
+    /// 取所有已收藏的课程（按阶 + 课号排序）
+    static func allFavorites() -> [CourseStage] {
+        let map = (UserDefaults.standard.dictionary(forKey: favoriteKey) as? [String: Bool]) ?? [:]
+        var result: [CourseStage] = []
+        for order in 2...10 {
+            result += courses(for: order).filter { map[$0.idKey] ?? false }
+        }
+        return result
+    }
+
     /// 某阶对应的课程（学习中心课程跟随阶数）。
     /// order 2 = 角块法；order 3 = 层先法；order 4 = 偶数阶降阶；order 5 = 奇数阶降阶；6-10 共享高阶降阶总览。
     static func courses(for order: Int) -> [CourseStage] {
@@ -1357,6 +1386,7 @@ struct CourseDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var currentProgress: Double = 0
+    @State private var isFavorited: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -1466,8 +1496,20 @@ struct CourseDetailSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") { dismiss() }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        isFavorited = stage.toggleFavorite()
+                    } label: {
+                        Image(systemName: isFavorited ? "star.fill" : "star")
+                            .foregroundColor(isFavorited ? .yellow : .white)
+                    }
+                    .accessibilityLabel(isFavorited ? "取消收藏" : "收藏本课")
+                }
             }
-            .onAppear { currentProgress = stage.progress }
+            .onAppear {
+                currentProgress = stage.progress
+                isFavorited = stage.isFavorite
+            }
         }
         .preferredColorScheme(.dark)
     }
@@ -1548,6 +1590,7 @@ struct MineView: View {
     @State private var showBackupSheet = false
     @State private var showAboutSheet = false
     @State private var showFeedbackSheet = false
+    @State private var showFavoriteSheet = false
     @State private var backupMessage: String? = nil
     @State private var showImportPicker = false
 
@@ -1579,6 +1622,7 @@ struct MineView: View {
         .sheet(isPresented: $showBackupSheet) { backupSheet }
         .sheet(isPresented: $showAboutSheet) { aboutSheet }
         .sheet(isPresented: $showFeedbackSheet) { feedbackSheet }
+        .sheet(isPresented: $showFavoriteSheet) { favoriteSheet }
         .sheet(isPresented: $showExportShare) {
             if let data = session.exportBackupData() {
                 ShareSheet(items: [backupFileURL(from: data)])
@@ -1708,7 +1752,7 @@ struct MineView: View {
         VStack(spacing: 8) {
             menuRow(icon: "gearshape.fill", title: "设置", desc: "档位、资料、主题", action: { showEditProfile = true })
             menuRow(icon: "clock.arrow.circlepath", title: "还原历史", desc: "\(session.history.count) 条记录", action: { showHistorySheet = true })
-            menuRow(icon: "bookmark.fill", title: "我的收藏公式", desc: "暂未收藏", action: { backupMessage = "收藏功能即将上线" })
+            menuRow(icon: "bookmark.fill", title: "我的收藏公式", desc: favoriteDesc, action: { showFavoriteSheet = true })
             menuRow(icon: "trophy.fill", title: "成就", desc: "已解锁 \(unlockedAchievementCount)/\(Achievement.all.count) 项", action: { showAchievementSheet = true })
             menuRow(icon: "square.and.arrow.up", title: "数据备份", desc: "导出/导入 JSON", action: { showBackupSheet = true })
             menuRow(icon: "bubble.left.and.bubble.right.fill", title: "意见反馈", desc: "告诉我们哪里需要改进", action: { showFeedbackSheet = true })
@@ -1752,6 +1796,12 @@ struct MineView: View {
     /// 已解锁的成就数
     private var unlockedAchievementCount: Int {
         Achievement.all.filter { $0.state(for: session) == .unlocked }.count
+    }
+
+    /// 收藏公式菜单行描述
+    private var favoriteDesc: String {
+        let n = CourseStage.allFavorites().count
+        return n > 0 ? "已收藏 \(n) 条公式" : "暂无收藏"
     }
 
     // MARK: - 备份数据子页 sheet
@@ -1968,6 +2018,97 @@ struct MineView: View {
         .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
     }
 
+    // MARK: - 收藏公式子页 sheet（按阶分组，空态提示，可跳课程详情）
+    private var favoriteSheet: some View {
+        NavigationStack {
+            ScrollView {
+                let favs = CourseStage.allFavorites()
+                if favs.isEmpty {
+                    // 空态
+                    VStack(spacing: 12) {
+                        Image(systemName: "bookmark")
+                            .font(.system(size: 44, weight: .light))
+                            .foregroundColor(.gray)
+                        Text("还没有收藏任何公式")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.white)
+                        Text("在「学习」里点开任意一课，右上角点星标即可收藏")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.top, 80)
+                    .padding(.horizontal, 40)
+                } else {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(favs) { stage in
+                            favoriteRow(stage)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
+                }
+                Color.clear.frame(height: 20)
+            }
+            .background(LinearGradient(
+                colors: [Color(red: 0.04, green: 0.04, blue: 0.08), Color(red: 0.01, green: 0.01, blue: 0.03)],
+                startPoint: .top, endPoint: .bottom
+            ).ignoresSafeArea())
+            .navigationTitle("我的收藏公式")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("关闭") { showFavoriteSheet = false }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    /// 单条收藏行：阶数 tag + 标题 + 目标 + 取消收藏
+    private func favoriteRow(_ stage: CourseStage) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(stage.color.opacity(0.25))
+                Image(systemName: stage.icon)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(stage.color)
+            }
+            .frame(width: 36, height: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("\(stage.order) 阶").font(.caption2.weight(.bold))
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(AppTheme.accent.opacity(0.2)))
+                        .foregroundColor(AppTheme.accent)
+                    Text("第 \(stage.id) 课 · \(stage.title)")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                }
+                Text(stage.goal)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Button {
+                _ = stage.toggleFavorite()
+                // 触发 sheet 重建以刷新列表
+                showFavoriteSheet = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { showFavoriteSheet = true }
+            } label: {
+                Image(systemName: "star.fill")
+                    .font(.subheadline)
+                    .foregroundColor(.yellow)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
+    }
+
     /// 成就进度（0..1）— 累计还原类按比例，进度类的为 1
     private func achievementProgress(_ ach: Achievement) -> Double {
         switch ach {
@@ -1996,10 +2137,10 @@ struct MineView: View {
                     .padding(.vertical, 24)
                     Group {
                         infoRow("定位", "魔方练习者的私人教练")
-                        infoRow("支持阶数", "2 阶 / 3 阶（4-10 阶规划中）")
+                        infoRow("支持阶数", "2 阶 - 10 阶")
                         infoRow("数据", "本地存储，不联网")
                         infoRow("识别", "拍照 + HSV 颜色识别")
-                        infoRow("求解", "Kociemba 两阶段（3 阶） / 角块 BFS（2 阶）")
+                        infoRow("求解", "Kociemba 两阶段（3 阶） / 角块 BFS（2 阶）· 高阶求解规划中")
                         infoRow("开发", "杰哥 + 助手")
                     }
                     .padding(.horizontal, 20)
