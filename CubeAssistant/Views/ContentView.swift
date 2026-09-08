@@ -4,13 +4,13 @@ import SwiftUI
 /// 主题：深空黑底 + iOS 系统蓝 + 玻璃卡片 + SF Symbols（对标苹果官网高级感）。
 ///
 /// 主页 = 3D 魔方 + 计时卡 + 打乱/重置 + 转层控件（选层 + 4 向转）。
-public struct ContentView: View {
+struct ContentView: View {
     @StateObject private var session = CubeSession()
     @State private var selectedTab: Tab = .home
 
-    public init() {}
+    init() {}
 
-    public enum Tab: String, CaseIterable {
+    enum Tab: String, CaseIterable {
         case home = "主页"
         case scan = "扫描"
         case learn = "学习"
@@ -26,7 +26,7 @@ public struct ContentView: View {
         }
     }
 
-    public var body: some View {
+    var body: some View {
         ZStack {
             // 深空黑渐变底
             LinearGradient(

@@ -12,7 +12,7 @@ import CoreGraphics
 /// ⚠️ 朝向约定：网格从左上到右下按行优先映射到该面的 facelet 0..8，需与
 /// KociembaSolver 的 facelet 朝向一致（U 面“上边”朝上、F 面“上边”朝上拍）。
 /// 若整体朝向拿不准，用「点一下改色」把明显错的块改对即可，校验器会拦下非法状态。
-public struct CameraScanView: View {
+struct CameraScanView: View {
     @Environment(\.dismiss) private var dismiss
     @ObservedObject var session: CubeSession
 
@@ -28,9 +28,9 @@ public struct CameraScanView: View {
     private let faceOrder: [Face] = [.U, .R, .F, .D, .L, .B]
     private let faceLabel: [Face: String] = [.U: "上 U", .R: "右 R", .F: "前 F", .D: "下 D", .L: "左 L", .B: "后 B"]
 
-    public init(session: CubeSession) { self.session = session }
+    init(session: CubeSession) { self.session = session }
 
-    public var body: some View {
+    var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 18) {

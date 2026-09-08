@@ -18,13 +18,13 @@ import Foundation
 ///      中的占位实现替换为 CKContainer + CKRecord/CKQuery 真实调用
 ///
 /// 接口保留：调用方（Session / ViewModel）零改动，启用时只动本文件。
-public final class CloudStore {
-    public static let shared = CloudStore()
+final class CloudStore {
+    static let shared = CloudStore()
 
     private init() {}
 
     /// 保存一次成绩。iCloud 未启用时 no-op。
-    public func save(duration: TimeInterval, moves: Int, scramble: String) {
+    func save(duration: TimeInterval, moves: Int, scramble: String) {
         // ICloud: 启用时替换为下面这段
         //
         //   let record = CKRecord(recordType: "SolveRecord")
@@ -37,7 +37,7 @@ public final class CloudStore {
     }
 
     /// 拉取历史成绩（按时间倒序，最多 100 条）。iCloud 未启用时返回空。
-    public func fetch(completion: @escaping ([SolveRecord]) -> Void) {
+    func fetch(completion: @escaping ([SolveRecord]) -> Void) {
         // ICloud: 启用时替换为下面这段
         //
         //   let query = CKQuery(recordType: "SolveRecord", predicate: NSPredicate(value: true))

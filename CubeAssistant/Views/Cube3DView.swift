@@ -9,12 +9,12 @@ import SceneKit
 /// 用户每转一步，`session.model` 变化 → `updateUIView` 重建贴纸颜色。
 ///
 /// 支持单指拖动自由旋转视角（自定义手势，避免与动画竞态）。
-public struct Cube3DView: UIViewRepresentable {
+struct Cube3DView: UIViewRepresentable {
     @ObservedObject var session: CubeSession
 
-    public init(session: CubeSession) { self.session = session }
+    init(session: CubeSession) { self.session = session }
 
-    public func makeUIView(context: Context) -> SCNView {
+    func makeUIView(context: Context) -> SCNView {
         let scnView = SCNView()
         scnView.allowsCameraControl = false
         scnView.autoenablesDefaultLighting = false
@@ -63,7 +63,7 @@ public struct Cube3DView: UIViewRepresentable {
         return scnView
     }
 
-    public func updateUIView(_ uiView: SCNView, context: Context) {
+    func updateUIView(_ uiView: SCNView, context: Context) {
         let co = context.coordinator
         let facelets = session.cube.facelets
         guard facelets != co.lastFacelets else { return }
@@ -71,10 +71,10 @@ public struct Cube3DView: UIViewRepresentable {
         co.applyFacelets(facelets)
     }
 
-    public func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     // MARK: - Coordinator
-    public final class Coordinator: NSObject {
+    final class Coordinator: NSObject {
         var scene: SCNScene!
         weak var scnView: SCNView?
         weak var cameraNode: SCNNode?

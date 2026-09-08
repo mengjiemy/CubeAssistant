@@ -2,13 +2,13 @@ import SwiftUI
 
 /// 历史成绩页（独立视图，可从任意入口调用）。
 /// 展示本地持久化的复原成绩（`session.history`，UserDefaults 存储）。
-public struct HistoryView: View {
+struct HistoryView: View {
     @ObservedObject var session: CubeSession
     @Environment(\.dismiss) private var dismiss
 
-    public init(session: CubeSession) { self.session = session }
+    init(session: CubeSession) { self.session = session }
 
-    public var body: some View {
+    var body: some View {
         NavigationStack {
             Group {
                 if session.history.isEmpty {

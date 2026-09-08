@@ -11,28 +11,28 @@ import SwiftUI
 /// - 计时用 `Timer` 驱动 0.1s 刷新 `elapsed` 显示值；真实用时仍由 `CubeModel`
 ///   内部用 `Date` 差值精确计算（停止时结算）。
 @MainActor
-public final class CubeSession: NSObject, ObservableObject {
+final class CubeSession: NSObject, ObservableObject {
     /// 领域模型（值语义，每次改动整体替换触发 objectWillChange）
-    @Published public private(set) var model: CubeModel = CubeModel()
+    @Published private(set) var model: CubeModel = CubeModel()
 
     /// 实时计时显示（0.1s 刷新），仅用于界面显示，结算用 `model.elapsed(at:)`
-    @Published public private(set) var liveElapsed: TimeInterval = 0
+    @Published private(set) var liveElapsed: TimeInterval = 0
 
     /// 提示 / 错误信息
-    @Published public var message: String? = nil
+    @Published var message: String? = nil
 
     /// 当前还原指引会话（进入"学习/还原"时构建），nil 表示未进入指引
-    @Published public private(set) var solveSession: SolveSession?
+    @Published private(set) var solveSession: SolveSession?
 
     /// 是否正在求解（后台计算 Kociemba，避免卡 UI）
-    @Published public private(set) var isSolving: Bool = false
+    @Published private(set) var isSolving: Bool = false
 
     /// 本地历史成绩（UserDefaults 持久化）
-    @Published public private(set) var history: [SolveRecord] = []
+    @Published private(set) var history: [SolveRecord] = []
 
     private var timer: Timer?
 
-    public override init() {
+    override init() {
         super.init()
         history = Self.loadHistoryFromDefaults()
     }
@@ -40,24 +40,24 @@ public final class CubeSession: NSObject, ObservableObject {
     // MARK: - 便捷查询
 
     /// 当前魔方状态
-    public var cube: CubeState { model.cube }
+    var cube: CubeState { model.cube }
     /// 魔方身份（物理/虚拟）
-    public var identity: CubeIdentity { model.identity }
+    var identity: CubeIdentity { model.identity }
     /// 转动方式（按钮/手势）
-    public var turnMode: TurnMode { model.turnMode }
+    var turnMode: TurnMode { model.turnMode }
     /// 是否正在计时
-    public var isTiming: Bool { model.isTiming }
+    var isTiming: Bool { model.isTiming }
     /// 是否已还原
-    public var isSolved: Bool { model.isSolved }
+    var isSolved: Bool { model.isSolved }
     /// 是否能继续 undo
-    public var canUndo: Bool { model.canUndo }
+    var canUndo: Bool { model.canUndo }
     /// undo 已走的步数（自 checkpoint 起）
-    public var undoCount: Int { model.undoStack.count }
+    var undoCount: Int { model.undoStack.count }
 
     // MARK: - 身份 / 模式切换
 
     /// 切换魔方身份（物理 ↔ 虚拟）。切换时重置计时，避免状态混乱。
-    public func setIdentity(_ id: CubeIdentity) {
+    func setIdentity(_ id: CubeIdentity) {
         guard model.identity != id else { return }
         var m = model
         m.identity = id
@@ -67,7 +67,7 @@ public final class CubeSession: NSObject, ObservableObject {
     }
 
     /// 切换转动方式（按钮/手势）
-    public func setTurnMode(_ mode: TurnMode) {
+    func setTurnMode(_ mode: TurnMode) {
         var m = model
         m.turnMode = mode
         model = m
@@ -76,7 +76,7 @@ public final class CubeSession: NSObject, ObservableObject {
     // MARK: - 状态建立（打乱/重置/扫描）
 
     /// 重置为还原态
-    public func reset() {
+    func reset() {
         var m = model
         m.reset()
         model = m
@@ -86,7 +86,7 @@ public final class CubeSession: NSObject, ObservableObject {
     }
 
     /// 随机打乱（默认 25 步，WCA 风格）
-    public func scramble(count: Int = 25) {
+    func scramble(count: Int = 25) {
         var m = model
         m.scramble(count: count)
         model = m
@@ -97,7 +97,7 @@ public final class CubeSession: NSObject, ObservableObject {
 
     /// 由扫描/手填写入完整 54 色。返回是否成功（非法给出 message）。
     @discardableResult
-    public func setFacelets(_ facelets: [Int]) -> Bool {
+    func setFacelets(_ facelets: [Int]) -> Bool {
         var m = model
         switch m.setFacelets(facelets) {
         case .success:
@@ -116,7 +116,7 @@ public final class CubeSession: NSObject, ObservableObject {
 
     /// 施加一步转动。返回是否恰好还原（虚拟模式据此自动停表）。
     @discardableResult
-    public func apply(_ move: Move) -> Bool {
+    func apply(_ move: Move) -> Bool {
         var m = model
         let solved = m.apply(move)
         model = m
@@ -129,7 +129,7 @@ public final class CubeSession: NSObject, ObservableObject {
 
     /// 连续回退一步（一路可退到 checkpoint）
     @discardableResult
-    public func undo() -> Bool {
+    func undo() -> Bool {
         var m = model
         let ok = m.undo()
         model = m
@@ -139,7 +139,7 @@ public final class CubeSession: NSObject, ObservableObject {
     // MARK: - 计时
 
     /// 开始计时（虚拟/物理通用入口）
-    public func startTiming() {
+    func startTiming() {
         var m = model
         m.startTiming()
         model = m
@@ -148,7 +148,7 @@ public final class CubeSession: NSObject, ObservableObject {
 
     /// 停止计时（返回本次用时）
     @discardableResult
-    public func stopTiming() -> TimeInterval {
+    func stopTiming() -> TimeInterval {
         let d = model.elapsed(at: Date())
         var m = model
         _ = m.stopTiming()
@@ -158,7 +158,7 @@ public final class CubeSession: NSObject, ObservableObject {
     }
 
     /// 手动结算一次成绩（物理模式：用户觉得自己完成了，手动停表）
-    public func finishManualSolve() {
+    func finishManualSolve() {
         let d = stopTiming()
         guard d > 0.5 else { return }  // 过滤误触
         let record = SolveRecord(id: UUID().uuidString,
@@ -188,7 +188,7 @@ public final class CubeSession: NSObject, ObservableObject {
     // MARK: - 还原指引（学习）
 
     /// 以当前状态为起点，构建还原指引会话（后台求解，避免卡 UI）
-    public func solve() {
+    func solve() {
         guard !isSolving else { return }
         let facelets = model.cube.facelets
         // 已还原则无需指引
@@ -203,9 +203,9 @@ public final class CubeSession: NSObject, ObservableObject {
         isSolving = true
         message = nil
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
             let session = SolveSession(startFacelets: facelets)
             Task { @MainActor in
-                guard let self else { return }
                 self.isSolving = false
                 if let session {
                     self.solveSession = session
@@ -218,7 +218,7 @@ public final class CubeSession: NSObject, ObservableObject {
     }
 
     /// 退出还原指引
-    public func clearSolve() {
+    func clearSolve() {
         solveSession = nil
         message = nil
     }
@@ -249,7 +249,7 @@ public final class CubeSession: NSObject, ObservableObject {
     private static let historyKey = "cube_history_records"
 
     private func saveHistoryToDefaults() {
-        if let data = try? JSONEncoder().encode(history.prefix(100)) {
+        if let data = try? JSONEncoder().encode(Array(history.prefix(100))) {
             UserDefaults.standard.set(data, forKey: Self.historyKey)
         }
     }
@@ -273,10 +273,10 @@ public final class CubeSession: NSObject, ObservableObject {
 }
 
 /// 一次复原成绩记录（本地持久化，结构对齐旧 CloudStore 展示）。
-public struct SolveRecord: Identifiable, Codable, Equatable {
-    public let id: String
-    public let duration: TimeInterval
-    public let moves: Int
-    public let scramble: String
-    public let date: Date
+struct SolveRecord: Identifiable, Codable, Equatable {
+    let id: String
+    let duration: TimeInterval
+    let moves: Int
+    let scramble: String
+    let date: Date
 }
