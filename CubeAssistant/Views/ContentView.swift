@@ -2,6 +2,20 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
+/// App 主题常量（集中管理，避免各处硬编码色值/间距）。
+/// 深空黑底 + 系统蓝强调（对应原型「深空黑玻璃」风格基准）。
+enum AppTheme {
+    /// 主强调蓝（品牌交互色）
+    static let accent = AppTheme.accent
+    /// 亮蓝（渐变/次级强调）
+    static let accentLight = AppTheme.accentLight
+    /// 深空黑底渐变（两档）
+    static let bgTop = Color(red: 0.04, green: 0.04, blue: 0.08)
+    static let bgBottom = Color(red: 0.01, green: 0.01, blue: 0.03)
+    /// 全页深空渐变背景（用作页面/Sheet 底色）
+    static let spaceGradient = LinearGradient(colors: [bgTop, bgBottom], startPoint: .top, endPoint: .bottom)
+}
+
 /// 主界面：4-Tab 框架（主页 / 扫描 / 学习 / 我的）。
 /// 主题：深空黑底 + iOS 系统蓝 + 玻璃卡片 + SF Symbols。
 ///
@@ -66,7 +80,7 @@ struct ContentView: View {
                         Text(tab.rawValue)
                             .font(.caption2)
                     }
-                    .foregroundColor(selectedTab == tab ? Color(red: 0.04, green: 0.52, blue: 1.0) : .white.opacity(0.5))
+                    .foregroundColor(selectedTab == tab ? AppTheme.accent : .white.opacity(0.5))
                     .frame(maxWidth: .infinity)
                 }
             }
@@ -122,7 +136,7 @@ struct HomeView: View {
                     .foregroundColor(.white)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.25)))
+                    .background(Capsule().fill(AppTheme.accent.opacity(0.25)))
                 }
                 Button {
                     session.setIdentity(session.identity == .physical ? .virtual : .physical)
@@ -133,7 +147,7 @@ struct HomeView: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.25)))
+                        .background(Capsule().fill(AppTheme.accent.opacity(0.25)))
                 }
             }
             .padding(.horizontal, 20)
@@ -154,11 +168,11 @@ struct HomeView: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(maxWidth: 220)
-                .tint(Color(red: 0.04, green: 0.52, blue: 1.0))
+                .tint(AppTheme.accent)
                 if session.turnMode == .gestures {
                     Label("在魔方上左右滑", systemImage: "hand.draw")
                         .font(.caption2)
-                        .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                        .foregroundColor(AppTheme.accent)
                 }
                 Spacer()
             }
@@ -289,7 +303,7 @@ struct HomeView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
-                    .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
+                    .background(Capsule().fill(AppTheme.accent))
             }
             .buttonStyle(.plain)
         case .running:
@@ -316,7 +330,7 @@ struct HomeView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
+                        .background(Capsule().fill(AppTheme.accent))
                 }
                 .buttonStyle(.plain)
                 Button {
@@ -391,7 +405,7 @@ struct HomeView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
             .background(
-                Capsule().fill(selected ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.white.opacity(0.06))
+                Capsule().fill(selected ? AppTheme.accent : Color.white.opacity(0.06))
             )
             .overlay(
                 Capsule().stroke(selected ? Color(red: 0.3, green: 0.7, blue: 1.0) : Color.clear, lineWidth: 2)
@@ -454,7 +468,7 @@ struct HomeView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
                     .contentShape(Rectangle())
-                    .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
+                    .background(Capsule().fill(AppTheme.accent))
             }
             .buttonStyle(.plain)
 
@@ -557,7 +571,7 @@ struct LearnView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
+                    .background(Capsule().fill(AppTheme.accent))
             }
             .buttonStyle(.plain)
             .disabled(session.isSolving)
@@ -598,7 +612,7 @@ struct LearnView: View {
                         .multilineTextAlignment(.center)
                     Text(move.notation)
                         .font(.system(.title, design: .monospaced).weight(.bold))
-                        .foregroundColor(Color(red: 0.4, green: 0.7, blue: 1.0))
+                        .foregroundColor(AppTheme.accentLight)
                 }
                 .padding(.vertical, 6)
                 Text("在下方魔方上转这一层，转完点「下一步」")
@@ -613,7 +627,7 @@ struct LearnView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
+                        .background(Capsule().fill(AppTheme.accent))
                 }
                 .buttonStyle(.plain)
             } else {
@@ -661,7 +675,7 @@ struct LearnView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "book.closed.fill")
-                    .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                    .foregroundColor(AppTheme.accent)
                 Text("\(session.order) 阶课程")
                     .font(.headline)
                     .foregroundColor(.white)
@@ -677,11 +691,11 @@ struct LearnView: View {
             // 进度摘要（按原型："已学 N/N 课 · 推荐继续：XXX"）
             HStack(spacing: 4) {
                 Text("已学 ").font(.caption).foregroundColor(.secondary)
-                Text("\(finishedCount)").font(.caption.weight(.bold)).foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                Text("\(finishedCount)").font(.caption.weight(.bold)).foregroundColor(AppTheme.accent)
                 Text("/ \(courses.count) 课").font(.caption).foregroundColor(.secondary)
                 if let next = nextCourse {
                     Text(" · 推荐继续：").font(.caption).foregroundColor(.secondary)
-                    Text(next.title).font(.caption.weight(.semibold)).foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                    Text(next.title).font(.caption.weight(.semibold)).foregroundColor(AppTheme.accent)
                 }
             }
             .padding(.bottom, 2)
@@ -791,7 +805,7 @@ struct LearnView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "questionmark.circle.fill")
-                    .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                    .foregroundColor(AppTheme.accent)
                 Text("常见问题")
                     .font(.headline)
                     .foregroundColor(.white)
@@ -844,7 +858,7 @@ struct LearnView: View {
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .background(
-                                Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.25))
+                                Capsule().fill(AppTheme.accent.opacity(0.25))
                             )
                     case .chinese:
                         // 中文：中文指令 + 公式字母
@@ -853,12 +867,12 @@ struct LearnView: View {
                             .foregroundColor(.white)
                         Text(move.notation)
                             .font(.system(.title, design: .monospaced).weight(.bold))
-                            .foregroundColor(Color(red: 0.4, green: 0.7, blue: 1.0))
+                            .foregroundColor(AppTheme.accentLight)
                     case .pro:
                         // 专业：纯公式大字
                         Text(move.notation)
                             .font(.system(.title, design: .monospaced).weight(.bold))
-                            .foregroundColor(Color(red: 0.4, green: 0.7, blue: 1.0))
+                            .foregroundColor(AppTheme.accentLight)
                     }
                 }
                 .padding(.vertical, 8)
@@ -912,7 +926,7 @@ struct LearnView: View {
         return VStack(spacing: 2) {
             Text(m.notation)
                 .font(.system(.body, design: .monospaced).weight(current ? .bold : .regular))
-                .foregroundColor(done ? .green : (current ? Color(red: 0.04, green: 0.52, blue: 1.0) : .white.opacity(0.6)))
+                .foregroundColor(done ? .green : (current ? AppTheme.accent : .white.opacity(0.6)))
                 .padding(.vertical, 6)
                 .padding(.horizontal, 10)
                 .background(
@@ -921,7 +935,7 @@ struct LearnView: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(current ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.clear, lineWidth: 2)
+                        .stroke(current ? AppTheme.accent : Color.clear, lineWidth: 2)
                 )
         }
     }
@@ -933,7 +947,7 @@ struct LearnView: View {
                 .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 11)
-                .background(Capsule().fill(disabled ? Color.white.opacity(0.06) : Color(red: 0.04, green: 0.52, blue: 1.0)))
+                .background(Capsule().fill(disabled ? Color.white.opacity(0.06) : AppTheme.accent))
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -1590,7 +1604,7 @@ struct MineView: View {
         HStack(spacing: 14) {
             ZStack {
                 Circle()
-                    .fill(LinearGradient(colors: [Color(red: 0.04, green: 0.52, blue: 1.0),
+                    .fill(LinearGradient(colors: [AppTheme.accent,
                                                   Color(red: 0.6, green: 0.2, blue: 1.0)],
                                          startPoint: .topLeading, endPoint: .bottomTrailing))
                 Text(String(session.profile.nickname.prefix(1)))
@@ -1606,7 +1620,7 @@ struct MineView: View {
                 HStack(spacing: 6) {
                     Text(currentLevelTitle)
                         .font(.caption.weight(.semibold))
-                        .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                        .foregroundColor(AppTheme.accent)
                     Text("· 已学 \(finishedCourseCount)/\(totalCourseCount) 课")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -1709,10 +1723,10 @@ struct MineView: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.18))
+                        .fill(AppTheme.accent.opacity(0.18))
                     Image(systemName: icon)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                        .foregroundColor(AppTheme.accent)
                 }
                 .frame(width: 32, height: 32)
                 VStack(alignment: .leading, spacing: 1) {
@@ -1760,7 +1774,7 @@ struct MineView: View {
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundColor(.white)
                                 .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
+                                .background(Capsule().fill(AppTheme.accent))
                         }.buttonStyle(.plain)
                         Button {
                             showImportPicker = true
@@ -1870,7 +1884,7 @@ struct MineView: View {
                 VStack(spacing: 10) {
                     // 成就概览
                     HStack(spacing: 10) {
-                        summaryItem("\(unlockedAchievementCount)", "已解锁", color: Color(red: 0.04, green: 0.52, blue: 1.0))
+                        summaryItem("\(unlockedAchievementCount)", "已解锁", color: AppTheme.accent)
                         summaryItem("\(Achievement.all.count)", "全部成就", color: .white)
                         summaryItem(currentLevelTitle, "当前等级", color: .yellow)
                     }
@@ -2237,8 +2251,8 @@ struct TrendChart: View {
                         }
                     }
                     .stroke(
-                        LinearGradient(colors: [Color(red: 0.04, green: 0.52, blue: 1.0),
-                                                Color(red: 0.4, green: 0.7, blue: 1.0)],
+                        LinearGradient(colors: [AppTheme.accent,
+                                                AppTheme.accentLight],
                                        startPoint: .leading, endPoint: .trailing),
                         style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
                     )
@@ -2248,7 +2262,7 @@ struct TrendChart: View {
                         let x = pad + step * CGFloat(i)
                         let y = pad + (h - 2 * pad) * (1 - CGFloat((d - minD) / range))
                         Circle()
-                            .fill(Color(red: 0.04, green: 0.52, blue: 1.0))
+                            .fill(AppTheme.accent)
                             .frame(width: 5, height: 5)
                             .position(x: x, y: y)
                     }

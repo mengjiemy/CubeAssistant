@@ -130,7 +130,7 @@ struct CameraScanView: View {
             HStack {
                 Text(stepTag)
                     .font(.caption.weight(.semibold))
-                    .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                    .foregroundColor(AppTheme.accent)
                 Spacer()
             }
             // 面名
@@ -202,7 +202,7 @@ struct CameraScanView: View {
                     RoundedRectangle(cornerRadius: 3)
                         .fill(Color.white.opacity(0.08))
                     RoundedRectangle(cornerRadius: 3)
-                        .fill(LinearGradient(colors: [Color(red: 0.04, green: 0.52, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+                        .fill(LinearGradient(colors: [AppTheme.accent, AppTheme.accentLight],
                                              startPoint: .leading, endPoint: .trailing))
                         .frame(width: geo.size.width * frac)
                 }
@@ -274,11 +274,11 @@ struct CameraScanView: View {
                 .frame(height: 56)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(current ? Color(red: 0.04, green: 0.52, blue: 1.0) : (done ? Color.green : Color.clear), lineWidth: 2)
+                        .stroke(current ? AppTheme.accent : (done ? Color.green : Color.clear), lineWidth: 2)
                 )
                 Text(faceLabel[face] ?? "")
                     .font(.caption2)
-                    .foregroundColor(current ? Color(red: 0.04, green: 0.52, blue: 1.0) : .secondary)
+                    .foregroundColor(current ? AppTheme.accent : .secondary)
             }
         }
         .buttonStyle(.plain)
@@ -287,7 +287,7 @@ struct CameraScanView: View {
     // MARK: - 拍摄/相册两个大卡片
     private var scanOptions: some View {
         VStack(spacing: 10) {
-            scanOptionCard(icon: "camera.fill", iconGradient: [Color(red: 0.04, green: 0.52, blue: 1.0), Color(red: 0.4, green: 0.7, blue: 1.0)],
+            scanOptionCard(icon: "camera.fill", iconGradient: [AppTheme.accent, AppTheme.accentLight],
                            title: "拍摄「\(faceLabel[currentFace] ?? "")」",
                            desc: "打开相机实时框选当前面",
                            action: { showSourceChoice = true })
@@ -472,7 +472,7 @@ struct ConfirmCubeView: View {
                             .padding(.vertical, 8)
                             .background(
                                 currentFace == face
-                                ? Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.25)
+                                ? AppTheme.accent.opacity(0.25)
                                 : Color.white.opacity(0.05)
                             )
                             .foregroundColor(currentFace == face ? .white : .white.opacity(0.7))
@@ -550,7 +550,7 @@ struct ConfirmCubeView: View {
                         .foregroundColor(.white)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
+                        .background(Capsule().fill(AppTheme.accent))
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 20)
