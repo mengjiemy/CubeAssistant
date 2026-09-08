@@ -158,5 +158,19 @@ check(Move.Rp.chineseInstruction == "右面逆时针转", "R' → 右面逆时�
 check(Move.F2.chineseInstruction == "前面转 180°", "F2 → 前面转 180°")
 check(Move.D.chineseInstruction == "底面顺时针转", "D → 底面顺时针转")
 
+// ---------- ProfileStore 用户资料 / 偏好 ----------
+print("\n【ProfileStore · 资料/偏好】")
+let defProfile = ProfileStore()
+check(defProfile.nickname == "魔方练习生", "默认昵称")
+check(defProfile.guideTier == .chinese, "默认中文档位")
+// 编解码 roundtrip：模拟自定义资料存档
+let custom = ProfileStore(nickname: "杰哥", signature: "提速中", guideTier: .pro)
+custom.save()   // 写入 UserDefaults（脚本进程域）
+let reloaded = ProfileStore.load()
+check(reloaded.nickname == "杰哥", "昵称持久化恢复")
+check(reloaded.guideTier == .pro, "档位持久化恢复")
+// 清理测试写入
+UserDefaults.standard.removeObject(forKey: "cube_profile_store_v1")
+
 print("\n========== 结果：\(passed) 通过 / \(failed) 失败 ==========")
 if failed > 0 { exit(1) } else { print("✅ 全部通过") }

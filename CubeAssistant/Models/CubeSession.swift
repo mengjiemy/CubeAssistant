@@ -37,6 +37,9 @@ final class CubeSession: NSObject, ObservableObject {
     /// 本地历史成绩（UserDefaults 持久化）
     @Published private(set) var history: [SolveRecord] = []
 
+    /// 用户资料 / 偏好（昵称、签名、档位）—— UserDefaults 持久化
+    @Published var profile: ProfileStore = .load()
+
     /// 相机复位令牌：自增一次，3D 视图据此把视角回正到默认朝向。
     @Published private(set) var cameraResetToken: Int = 0
 
@@ -47,6 +50,7 @@ final class CubeSession: NSObject, ObservableObject {
     override init() {
         super.init()
         history = Self.loadHistoryFromDefaults()
+        profile = .load()
     }
 
     // MARK: - 便捷查询
@@ -330,6 +334,35 @@ final class CubeSession: NSObject, ObservableObject {
             return []
         }
         return records
+    }
+
+    /// 保存资料/偏好到 UserDefaults（profile 改动后调用）
+    func saveProfile() {
+        profile.save()
+    }
+
+    /// 删除单条历史（按 id）
+    func deleteHistory(_ id: String) {
+        history.removeAll { $0.id == id }
+        saveHistoryToDefaults()
+    }
+
+    /// 清空全部历史（弹二次确认由 UI 层负责）
+    func clearHistory() {
+        history.removeAll()
+        saveHistoryToDefaults()
+    }
+
+    // MARK: - 成就回算（纯计算，基于 history 实时推导）
+
+    /// 还原成功总次数
+    var totalSolves: Int { history.count }
+    /// 最快用时（秒），无记录返回 nil
+    var bestTime: TimeInterval? { history.map(\.duration).min() }
+    /// 平均用时（秒），无记录返回 nil
+    var averageTime: TimeInterval? {
+        guard !history.isEmpty else { return nil }
+        return history.map(\.duration).reduce(0, +) / Double(history.count)
     }
 
     // MARK: - 格式化
