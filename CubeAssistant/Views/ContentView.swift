@@ -652,19 +652,25 @@ struct LearnView: View {
         .padding(.horizontal, 20)
     }
 
-    /// 基础课程骨架：分阶段标题 + 说明（图文教学后续版本完善）
+    /// 当前阶数对应的课程（原型：学习中心课程跟随阶数）
+    private var currentCourses: [CourseStage] { CourseStage.courses(for: session.order) }
+
+    /// 基础课程骨架：分阶段标题 + 说明（图文教学后续版本完善）。课程按当前阶数切换。
     private var courseSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let courses = currentCourses
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Image(systemName: "book.closed.fill")
                     .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
-                Text("三阶课程")
+                Text("\(session.order) 阶课程")
                     .font(.headline)
                     .foregroundColor(.white)
                 Spacer()
             }
 
-            Text("按阶段学习还原，打乱后配合「求解」边看边练")
+            Text(session.isHighOrder || session.isOrder2
+                 ? "高阶先「降阶」再按 \(session.order) 阶公式还原，边看边在虚拟魔方上练"
+                 : "按阶段学习还原，打乱后配合「求解」边看边练")
                 .font(.caption)
                 .foregroundColor(.secondary)
 
@@ -672,7 +678,7 @@ struct LearnView: View {
             HStack(spacing: 4) {
                 Text("已学 ").font(.caption).foregroundColor(.secondary)
                 Text("\(finishedCount)").font(.caption.weight(.bold)).foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
-                Text("/ \(CourseStage.all.count) 课").font(.caption).foregroundColor(.secondary)
+                Text("/ \(courses.count) 课").font(.caption).foregroundColor(.secondary)
                 if let next = nextCourse {
                     Text(" · 推荐继续：").font(.caption).foregroundColor(.secondary)
                     Text(next.title).font(.caption.weight(.semibold)).foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
@@ -680,7 +686,21 @@ struct LearnView: View {
             }
             .padding(.bottom, 2)
 
-            ForEach(CourseStage.all, id: \.id) { stage in
+            if courses.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "books.vertical")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                    Text("\(session.order) 阶教程制作中，先用「求解 / 手动转」练手感吧")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 18)
+            }
+
+            ForEach(courses, id: \.id) { stage in
                 Button {
                     selectedCourse = stage
                 } label: {
@@ -756,14 +776,14 @@ struct LearnView: View {
         }
     }
 
-    /// 已学完的课数（progress >= 1）
+    /// 已学完的课数（progress >= 1，按当前阶数课程）
     private var finishedCount: Int {
-        CourseStage.all.filter { $0.progress >= 1 }.count
+        currentCourses.filter { $0.progress >= 1 }.count
     }
 
     /// 下一节推荐课程（第一个未完成的）
     private var nextCourse: CourseStage? {
-        CourseStage.all.first { $0.progress < 1 }
+        currentCourses.first { $0.progress < 1 }
     }
 
     /// 帮助 FAQ：可折叠手风琴
@@ -924,6 +944,7 @@ struct LearnView: View {
 /// 课程阶段（骨架定义）
 struct CourseStage: Identifiable {
     let id: Int
+    let order: Int
     let title: String
     let goal: String
     let icon: String
@@ -931,14 +952,17 @@ struct CourseStage: Identifiable {
     /// 课程正文（多行段落，按原型分步讲解）
     let content: String
 
-    /// 进度（0..1），从 UserDefaults 读，按课程 id 存
+    /// 进度（0..1），从 UserDefaults 读，按 (阶数, id) 存 → 每阶独立进度。
+    /// 兼容旧版无阶数 key（course_2…course_5 = 3 阶），迁移读回不丢。
     var progress: Double {
         let map = (UserDefaults.standard.dictionary(forKey: "cube_course_progress") as? [String: Double]) ?? [:]
-        return map[idKey] ?? 0
+        if let v = map[idKey] { return v }
+        if order == 3, let legacy = map["course_\(id)"] { return legacy }   // 旧版 3 阶进度
+        return 0
     }
 
-    /// 用于持久化的 key
-    var idKey: String { "course_\(id)" }
+    /// 用于持久化的 key（带阶数，跨阶不串）
+    var idKey: String { "course_\(order)_\(id)" }
 
     /// 状态色（进度对应状态的颜色）
     var statusColor: Color {
@@ -947,71 +971,366 @@ struct CourseStage: Identifiable {
         return .secondary
     }
 
-    static var all: [CourseStage] {
+    /// 某阶对应的课程（学习中心课程跟随阶数）。
+    /// order 2 = 角块法；order 3 = 层先法；order 4 = 偶数阶降阶；order 5 = 奇数阶降阶；6-10 共享高阶降阶总览。
+    static func courses(for order: Int) -> [CourseStage] {
+        switch order {
+        case 2: return course2
+        case 3: return course3
+        case 4: return course4
+        case 5: return course5
+        default: return highOrderCourses(order)
+        }
+    }
+
+    private static func s(_ id: Int, _ order: Int, _ title: String, _ goal: String, _ icon: String, _ color: Color, _ content: String) -> CourseStage {
+        CourseStage(id: id, order: order, title: title, goal: goal, icon: icon, color: color, content: content)
+    }
+
+    // MARK: 2 阶（角块法，4 课）
+    private static var course2: [CourseStage] {
         [
-            CourseStage(id: 1, title: "认识魔方结构", goal: "中心块、棱块、角块的区别与转动方式", icon: "cube", color: .blue,
-                        content: """
-                        魔方由 6 个中心块、12 条棱块、8 个角块共 26 块组成（不计内核）。
+            s(1, 2, "认识二阶结构", "角块、方位、转法记号与三阶的关联", "cube", .blue,
+              """
+              二阶魔方（口袋魔方）本质是「只有 8 个角块的三阶」——它没有中心块、没有棱块，只剩角。
 
-                        • 中心块：每个面正中 1 块，相对位置固定，决定这一面的颜色。
-                        • 棱块：两个面之间的块，每块 2 个贴纸；3 阶共 12 条。
-                        • 角块：三个面交汇处的块，每块 3 个贴纸；3 阶共 8 个。
+              • 每个角块 3 张贴纸，决定它该回哪个角落。
+              • 因为没有中心块，颜色相对关系靠经验：白对黄、红对橙、蓝对绿。
+              • 记号与三阶完全通用：U/D/L/R/F/B + ' 逆时针 + 2 转半圈。
 
-                        记号：U 上 / D 下 / L 左 / R 右 / F 前 / B 后。U 指顶面（面对你时最上），其他类推。
+              好消息：二阶的每个转动，都等价于三阶的某个转动，公式也能平移着用。
+              """),
+            s(2, 2, "还原底层", "先拼出白色底面四角，让侧面颜色也对齐", "square.grid.2x2.fill", .green,
+              """
+              目标：让底面 4 个含白色的角块都归位，且侧面颜色与相邻角对得上。
 
-                        不带后缀=顺时针 90°（从该面对外看），' 表示逆时针，2 表示转 180°。
-                        """),
-            CourseStage(id: 2, title: "底层十字", goal: "在底面拼出十字形（白色对黄色中心）", icon: "plus", color: .green,
-                        content: """
-                        目标：把底面（这里指 D 面，本课设白色为底色）拼出十字，并让十字的 4 条棱都和侧面中心同色。
+              步骤要点：
+              1. 任取一个白角块，放到底面某个角（先不管其余）。
+              2. 把它对应的同色角块转到目标正上方（用 U/U'/U2）。
+              3. 做 R U R' U'（或 L' U' L U）让它滚进底面，直到归位。
+              4. 逐个放完 4 个白角 → 底面完成且侧面颜色自成规律。
 
-                        步骤要点：
-                        1. 先找带白色的棱块（4 条），把它们逐一翻到底面。
-                        2. 每条翻到底后，转两次 D（D2）或配 U'/U 让它对齐侧面中心色。
-                        3. 反复 4 次，直到 4 个白棱全部到底且侧面颜色对齐 → 底层十字完成。
+              提示：这一步和三阶「底层角块」一模一样，熟了手感通用。
+              """),
+            s(3, 2, "顶层角块朝向", "让顶面 4 个角块全部翻成黄色朝上", "arrow.up.arrow.down.circle", .yellow,
+              """
+              目标：不管位置对不对，先把顶面四个角都翻成黄面朝上。
 
-                        常见错误：翻下去时没注意侧面颜色 → 十字虽然成型但和侧面中心对不上。
-                        """),
-            CourseStage(id: 3, title: "底层角块还原", goal: "把四个底层角块归位（白色+两种侧面色）", icon: "square.grid.2x2.fill", color: .yellow,
-                        content: """
-                        目标：把 4 个底层角块（含白色）逐一放到底层对应位置，使三面颜色全部对齐中心。
+              口诀公式（右手小鱼）：
+              R U R' U R U2 R' —— 连做 1~2 次，每次把「一个黄角在左前上」的状态摆好。
 
-                        步骤要点：
-                        1. 找底层任一不在位的角块（看顶面或底层，含白色）。
-                        2. 把角块转到目标位置正上方（用 U/U'/U2 调整）。
-                        3. 做公式 R' D' R D（俗称「右勾」），直到角块归位。
-                        4. 重复直到 4 个角块全部归位。
+              步骤要点：
+              1. 找一个「黄面朝左」的角摆在左前，做一遍公式。
+              2. 若顶面还不是全黄，转动整体（y）换角再重复，直到顶面 4 角全黄。
 
-                        标记完成 → 进入下一课。
-                        """),
-            CourseStage(id: 4, title: "中层棱块归位", goal: "把 4 个中层棱块归位（无黄无白）", icon: "square.grid.3x2.fill", color: .orange,
-                        content: """
-                        目标：把不含黄/白的 4 个棱块归位到中层，使两面颜色都对齐对应中心。
+              常见错误：做完公式魔方没到位——多半是起始朝向摆错。
+              """),
+            s(4, 2, "顶层角块归位", "交换顶层 4 角位置，二阶完成", "checkmark.circle.fill", .purple,
+              """
+              目标：顶面已全黄，只需把 4 个角交换到正确位置即可还原二阶。
 
-                        步骤要点：
-                        1. 顶层找无黄无白的棱块（4 个），看顶色应和某侧面中心一致。
-                        2. 用 U/U'/U2 把顶色对齐到对应侧面正上方。
-                        3. 看棱块的「左色」对的是 L 还是 R：
-                           • 左对 L：做 U' L' U L U F U' F'
-                           • 左对 R：做 U R U' R' U' F' U F
-                        4. 4 个棱块逐一完成。
+              三循环公式（角块定位）：
+              U R U' L' U R' U' L —— 会让三个角循环交换。
 
-                        这一步练熟了中层的"手筋"就有了。
-                        """),
-            CourseStage(id: 5, title: "顶层还原", goal: "顶面十字 + 顶面还原 + 顶层全部归位", icon: "star.fill", color: .purple,
-                        content: """
-                        目标：把顶层（含黄色面）从「鱼眼」/「一字」/「拐角」逐步还原到完全归位。
+              步骤要点：
+              1. 找到一个「已归位」的角固定住，把它放右下。
+              2. 做上面的三循环公式 1~2 次，观察其余角是否到位。
+              3. 全到位即还原完成。
 
-                        步骤要点：
-                        1. 顶面十字：F R U R' U' F'（小鱼→一字→十字）
-                        2. 顶面还原（黄面全黄）：R U R' U R U2 R'（左手法 / 右手法）
-                        3. 顶层棱块归位：R U R' U R U2 R'（顶棱定位）
-                        4. 顶层角块归位：U R U' L' U R' U' L（角块互换）
+              若 4 个角都没归位：先随便做一次公式制造一个归位角，再回到第 1 步。
+              """),
+        ]
+    }
 
-                        完成后 → 全部还原，撒花 🎉
+    // MARK: 3 阶（层先法，5 课）
+    private static var course3: [CourseStage] {
+        [
+            s(1, 3, "认识魔方结构", "中心块、棱块、角块的区别与转动方式", "cube", .blue,
+              """
+              魔方由 6 个中心块、12 条棱块、8 个角块共 26 块组成（不计内核）。
 
-                        提示：每个公式连做多次观察变化，是最快的记忆方法。
-                        """),
+              • 中心块：每个面正中 1 块，相对位置固定，决定这一面的颜色。
+              • 棱块：两个面之间的块，每块 2 个贴纸；3 阶共 12 条。
+              • 角块：三个面交汇处的块，每块 3 个贴纸；3 阶共 8 个。
+
+              记号：U 上 / D 下 / L 左 / R 右 / F 前 / B 后。U 指顶面（面对你时最上），其他类推。
+
+              不带后缀=顺时针 90°（从该面对外看），' 表示逆时针，2 表示转 180°。
+              """),
+            s(2, 3, "底层十字", "在底面拼出十字形（白色对黄色中心）", "plus", .green,
+              """
+              目标：把底面（这里指 D 面，本课设白色为底色）拼出十字，并让十字的 4 条棱都和侧面中心同色。
+
+              步骤要点：
+              1. 先找带白色的棱块（4 条），把它们逐一翻到底面。
+              2. 每条翻到底后，转两次 D（D2）或配 U'/U 让它对齐侧面中心色。
+              3. 反复 4 次，直到 4 个白棱全部到底且侧面颜色对齐 → 底层十字完成。
+
+              常见错误：翻下去时没注意侧面颜色 → 十字虽然成型但和侧面中心对不上。
+              """),
+            s(3, 3, "底层角块还原", "把四个底层角块归位（白色+两种侧面色）", "square.grid.2x2.fill", .yellow,
+              """
+              目标：把 4 个底层角块（含白色）逐一放到底层对应位置，使三面颜色全部对齐中心。
+
+              步骤要点：
+              1. 找底层任一不在位的角块（看顶面或底层，含白色）。
+              2. 把角块转到目标位置正上方（用 U/U'/U2 调整）。
+              3. 做公式 R' D' R D（俗称「右勾」），直到角块归位。
+              4. 重复直到 4 个角块全部归位。
+
+              标记完成 → 进入下一课。
+              """),
+            s(4, 3, "中层棱块归位", "把 4 个中层棱块归位（无黄无白）", "square.grid.3x2.fill", .orange,
+              """
+              目标：把不含黄/白的 4 个棱块归位到中层，使两面颜色都对齐对应中心。
+
+              步骤要点：
+              1. 顶层找无黄无白的棱块（4 个），看顶色应和某侧面中心一致。
+              2. 用 U/U'/U2 把顶色对齐到对应侧面正上方。
+              3. 看棱块的「左色」对的是 L 还是 R：
+                 • 左对 L：做 U' L' U L U F U' F'
+                 • 左对 R：做 U R U' R' U' F' U F
+              4. 4 个棱块逐一完成。
+
+              这一步练熟了中层的手筋就有了。
+              """),
+            s(5, 3, "顶层还原", "顶面十字 + 顶面还原 + 顶层全部归位", "star.fill", .purple,
+              """
+              目标：把顶层（含黄色面）从「鱼眼」/「一字」/「拐角」逐步还原到完全归位。
+
+              步骤要点：
+              1. 顶面十字：F R U R' U' F'（小鱼→一字→十字）
+              2. 顶面还原（黄面全黄）：R U R' U R U2 R'（左手法 / 右手法）
+              3. 顶层棱块归位：R U R' U R U2 R'（顶棱定位）
+              4. 顶层角块归位：U R U' L' U R' U' L（角块互换）
+
+              完成后 → 全部还原，撒花 🎉
+
+              提示：每个公式连做多次观察变化，是最快的记忆方法。
+              """),
+        ]
+    }
+
+    // MARK: 4 阶（偶数阶降阶法，5 课）——含特殊情况 parity
+    private static var course4: [CourseStage] {
+        [
+            s(1, 4, "认识四阶与降阶思路", "偶数阶无固定中心，先降阶成三阶再解", "cube", .blue,
+              """
+              四阶（4×4×4）比三阶多一层核心难点：它没有固定中心块。
+              三阶的中心定了整面颜色，四阶的「中心」是 24 个可移动的小块。
+
+              全世界统一的思路叫「降阶法」：
+              1. 先把每面 4 个中心小块拼成 1 个大中心 → 6 个面各就各位。
+              2. 再把同色的棱两两配对成 1 条粗棱 → 12 条粗棱。
+              3. 此时四阶看外表已经等同于三阶，用你会的三阶公式收尾。
+              4. 偶数阶最后可能冒出特殊情况（parity），有两个专有公式解决。
+
+              一句话：中心 + 棱配对 → 三阶还原 → 特殊情况收尾。
+              """),
+            s(2, 4, "合并中心块", "把每面 4 个中心小块拼成 6 个大中心", "square.grid.2x2", .green,
+              """
+              目标：先拼出 6 个 2×2 的同色大中心。四阶中心没有固定色位，但对面关系仍固定。
+
+              步骤要点：
+              1. 先定第一对对面（如白/黄），拼好这 2 个面中心。
+              2. 再拼第二对对面（如红/橙），拼的时候用「暂存区」技巧不破坏已拼面。
+              3. 拼中心用「两条同色在中间 → 用 F/U 方向把它插进面心」的平移小操作。
+
+              核心手法：
+              • 让同色两块水平相邻后，用转动把这对滚进目标面心。
+              • 主色面拼好后，一律用未完成面当缓冲，别碰已拼好的大中心。
+
+              四阶中心拼完，等于拿到了「谁是什么颜色」的答案。
+              """),
+            s(3, 4, "配对棱块", "把 24 条小棱两两配对成 12 条粗棱", "square.grid.3x2.fill", .orange,
+              """
+              目标：把颜色相同的两个棱块凑成一对，当作三阶的一条棱用。
+
+              步骤要点：
+              1. 用一个未配对的棱块当工作位，去找同色伙伴。
+              2. 伙伴在顶层/底层时，用「转动 + 翻棱」让它贴到自己旁边。
+              3. 配对完成后把它放到完成的棱堆里，再引入下一个未配对棱。
+
+              遇到「最后一对」两棱颜色对不上（顺序不对）时，用「最后两棱公式」交换内部贴纸再配对。
+
+              配对全部完成 → 四阶从结构上已经可以被当作三阶来解。
+              """),
+            s(4, 4, "按三阶还原", "用三阶层先/CFOP 公式还原整个四阶", "layers.fill", .teal,
+              """
+              中心拼好、棱配对好之后，把每个「大中心」当一个三阶中心、每条「粗棱」当一条三阶棱。
+
+              这时直接套用你在「3 阶课程」里学的全部公式：
+              1. 底层十字（注意对侧面中心色）。
+              2. 底层角块、中层棱块。
+              3. 顶面还原（OLL）。
+              4. 顶层排列（PLL）。
+
+              唯一提醒：转动的「层」不再是一格，而是完整的一层（厚度 = 四阶的半层宽 = 外层单层）。
+              所以三阶的 U/R/F 在四阶上一样成立。
+
+              走完这些，绝大多数情况下四阶已经还原。剩下极少数会触发 parity。
+              """),
+            s(5, 4, "特殊情况（parity）", "用两个专用公式处理单边翻棱与 PLL 特殊情况", "exclamationmark.triangle.fill", .purple,
+              """
+              偶数阶（4/6/8/10）在按三阶还原到最后时，会出现三阶不可能出现的情况，叫特殊情况。
+
+              OLL 特殊情况（单边翻棱）：顶面只剩一条棱翻不过来。
+              公式（把这条棱放 F 面正前）：
+              r U2 x r U2 r U2 r' U2 l U2 r' U2 r U2 r' U2 r'
+              （r = 靠右两层同时转；做完顶面朝向即可正常。）
+
+              PLL 特殊情况（两对角或两对棱需交换）：
+              先用「对棱互换」公式把顶层理顺：
+              r2 U2 r2 Uw2 r2 u2（u = 上下两层一起转）
+              交换后回到普通 PLL，用三阶公式收尾。
+
+              记不住没事：先会认「触发前状态长什么样」，等需要时再查这两个公式。
+              """),
+        ]
+    }
+
+    // MARK: 5 阶（奇数阶降阶法，5 课）——有固定中心，无 parity
+    private static var course5: [CourseStage] {
+        [
+            s(1, 5, "认识五阶与奇数阶优势", "五阶有固定中心，比四阶少了中心色位难点", "cube", .blue,
+              """
+              五阶（5×5×5）是奇数阶，和三阶一样有一个固定中心块。
+              这点让五阶比四阶好入门：颜色方位不用自己定，中心固定即知哪面对哪色。
+
+              降阶思路与四阶类似但更直观：
+              1. 中心：每面要拼成一个「固定中心 + 周围一圈」的同色 3×3 中心区。
+              2. 棱：同色棱按 3 个一组配对成粗棱（共 12 条 × 每组 3 小块）。
+              3. 之后完全等同于三阶还原。
+
+              奇数阶在按三阶还原阶段基本不触发 parity。
+              """),
+            s(2, 5, "还原中心块", "每面拼出 3×3 同色中心（含固定中心）", "square.grid.3x3.fill", .green,
+              """
+              目标：把每面 9 个中心小块（1 个固定 + 8 个活动）拼成整片同色。
+
+              步骤要点：
+              1. 先做一条 3 格的中心条，再补齐另两条 → 拼成一个 3×3。
+              2. 固定中心决定本面颜色，先把它周围的 8 块靠拢它。
+              3. 用「条平移」手法：把同色小块合成竖/横条，再用空面插进目标面。
+
+              常见顺序：先拼白/黄两面对立面，再拼侧面对。
+              每次只动一个正在拼的面，其它已拼好的面当禁地别碰。
+
+              中心拼完 → 五阶的颜色坐标系就定死了。
+              """),
+            s(3, 5, "配对棱块", "同色棱 3 块一组，配成 12 条粗棱", "square.grid.3x2.fill", .orange,
+              """
+              目标：把每一条「三格同色棱」凑齐（比四阶多一格，逻辑相同）。
+
+              步骤要点：
+              1. 用未配对棱当工作位，找齐 3 个同色块。
+              2. 先凑好第 1、2 格，再用一次「翻棱/插棱」把第 3 格并进来。
+              3. 配好后整体放到完成的棱堆，引入下一组。
+
+              最后一组对不齐时，用「最后两棱交换公式」调整组内贴纸顺序。
+
+              五阶棱配对因多一格，比四阶稍繁琐，但方法完全可平移。
+              """),
+            s(4, 5, "按三阶还原", "把五阶当三阶，用三阶公式还原", "layers.fill", .teal,
+              """
+              中心 3×3、棱 3 块一组完成后，五阶从结构上就等于三阶。
+
+              直接套用三阶层先法或 CFOP：
+              1. 底层十字。
+              2. 底层角块 + 中层棱块。
+              3. 顶面还原。
+              4. 顶层排列。
+
+              注意：降阶后的「一层」厚度 = 五阶整层宽，外层单层转动即对应三阶单面转动。
+
+              奇数阶走到这通常直接还原，极少需要 parity 公式。
+              """),
+            s(5, 5, "高阶手筋与提速", "中心/棱的连做、观察与转法提速", "gauge", .purple,
+              """
+              当你能稳定还原 5 阶后，试着压缩时间。
+
+              中心提速：
+              • 一次拼一整条而非逐格搬，减少转动次数。
+              • 预判下一个该拼哪条，减少停顿。
+
+              棱提速：
+              • 学会「中途配对」：转一面时顺带把另一组棱也带上。
+              • 熟练后 6-10 阶的棱配对只是更多组 + 更多层，方法零新增。
+
+              手筋都是练出来的肌肉记忆，每天刷 5-10 分钟即可稳步变快。
+              """),
+        ]
+    }
+
+    // MARK: 6-10 阶（高阶降阶法总览，共享一套方法论，按阶参数化）
+    private static func highOrderCourses(_ order: Int) -> [CourseStage] {
+        let even = order % 2 == 0
+        let edgeCount = order - 2   // 每组棱的小块数
+        return [
+            s(1, order, "认识 \(order) 阶与降阶共性", "无论几阶都走「中心→棱→三阶还原」", "cube", .blue,
+              """
+              \(order) 阶（\(order)×\(order)×\(order)）块数多，但解法和 4/5 阶是完全同一套降阶法，只是量变：
+
+              • 中心：每面要拼出 \(order) 行 × \(order) 列的整片同色中心区（\(even ? "偶数阶无固定中心，先定对面色位" : "奇数阶有固定中心，方位自带")）。
+              • 棱：每条棱 \(edgeCount) 个同色小块为一组，共 12 条大棱要配齐。
+              • 降完阶 → 整个魔方等价于一个三阶，用三阶公式还原。
+
+              差异只在块数变多、层数变多，手法零新增。这一课先建立整体心智模型。
+              """),
+            s(2, order, "合并中心块（更大规模）", "逐面拼出 \(order)×\(order) 大中心", "square.grid.2x2.fill", .green,
+              """
+              目标：把每面 \(order)×\(order) 个中心小块拼成整片，6 面完成即定死颜色坐标系。
+
+              步骤要点：
+              1. 从某一对面开始（如白/黄），先拼它的一整条中心条，再逐条补齐整面。
+              2. \(even ? "偶数阶无固定中心：先把第一对对立面中心拼好当作基准，再确定其它四面方位" : "奇数阶有固定中心：绕固定中心一圈圈往外拼，由中心色确定本面")。
+              3. 用「条状平移」手法把同色小块汇成整条，再插进目标面；已拼好的面当禁地。
+
+              规模越大越要一次搬一条，别一块一块挪，否则转动数爆炸。
+              """),
+            s(3, order, "配对棱块", "每组 \(edgeCount) 个同色棱配成 12 条大棱", "square.grid.3x2.fill", .orange,
+              """
+              目标：把每条大棱的 \(edgeCount) 个同色小块全部凑齐，当作三阶一条棱。
+
+              步骤要点：
+              1. 用一条未配对的大棱当工作位。
+              2. 逐格补齐同色块，凑到 \(edgeCount) 个后整体放下，再引入下一条。
+              3. 组内顺序错了就用「最后两棱交换」公式调整。
+
+              纯配棱阶段无特殊困难，纯粹是量的累积。
+              """),
+            s(4, order, "按三阶还原", "降阶完成后用三阶公式整体还原", "layers.fill", .teal,
+              """
+              中心、棱全部降阶完成后，\(order) 阶就从结构上等价于三阶：
+              把每个大中心当一个三阶中心、每条大棱当一条三阶棱，直接套三阶层先/CFOP。
+
+              1. 底层十字（对侧面中心色）。
+              2. 底层角块 + 中层棱块。
+              3. 顶面还原。
+              4. 顶层排列。
+
+              高阶的「一层」厚度很宽，外层单层转动对应三阶单面转动，公式逐个成立。
+              """),
+            s(5, order, "特殊情况与收官", even ? "偶数阶用 parity 公式收尾" : "奇数阶复核后即还原", "exclamationmark.triangle.fill", .purple,
+              even
+              ? """
+              高阶偶数阶（4/6/8/10）最后常出现三阶不可能的「特殊情况（parity）」，成因：偶数阶没有固定中心，配对后的棱/层在坐标上可能错一层。
+
+              OLL 特殊情况（单边翻棱，把该棱放正前）：
+              r U2 x r U2 r U2 r' U2 l U2 r' U2 r U2 r' U2 r'
+
+              PLL 特殊情况（对棱/对角需互换）：
+              r2 U2 r2 Uw2 r2 u2
+
+              两个公式各做一遍理顺后，回普通 PLL 收尾。本阶已属偶数阶，请备好这两个公式。
+              """
+              : """
+              奇数阶（5/7/9）没有偶数阶那类「单边翻棱 / 对棱互换」的 parity，走到三阶还原通常直接完成。
+
+              若个别状态看起来不对劲，多半是降阶阶段某组中心或棱配对没对齐——回头检查那组，用「最后两棱交换」或重拼该中心即可。
+
+              因为少了 parity，奇数高阶反而比同尺寸的偶数高阶更顺。恭喜你能驾驭 \(order) 阶 🎉
+              """),
         ]
     }
 }
@@ -1329,12 +1648,11 @@ struct MineView: View {
         return "Lv.1 新手"
     }
 
-    /// 已学完的课数（从 UserDefaults 读进度）
+    /// 已学完的课数（从 UserDefaults 读进度，按当前阶数课程）
     private var finishedCourseCount: Int {
-        let map = (UserDefaults.standard.dictionary(forKey: "cube_course_progress") as? [String: Double]) ?? [:]
-        return map.values.filter { $0 >= 1 }.count
+        CourseStage.courses(for: session.order).filter { $0.progress >= 1 }.count
     }
-    private var totalCourseCount: Int { CourseStage.all.count }
+    private var totalCourseCount: Int { CourseStage.courses(for: session.order).count }
 
     // MARK: 3 卡片统计（按原型：还原次数/最佳成绩/学习天数）
     private var statsCard: some View {
