@@ -79,27 +79,34 @@ final class CubeSession: NSObject, ObservableObject {
 
     // MARK: - 身份 / 模式切换
 
-    /// 切换魔方阶数（2 阶 / 3 阶）。切换时重建模型、清指引、复位计时。
+    /// 切换魔方阶数（2~10 阶）。切换时重建模型、清指引、复位计时。
     func setOrder(_ newOrder: Int) {
-        guard newOrder == 2 || newOrder == 3, model.order != newOrder else { return }
+        guard (2...10).contains(newOrder), model.order != newOrder else { return }
         let m = CubeModel(identity: model.identity, order: newOrder)
         model = m
         clearSolve()
         stopTimerUI()
         accumulatedElapsed = 0
-        message = newOrder == 2 ? "已切换到 2 阶" : "已切换到 3 阶"
+        message = "已切换到 \(newOrder) 阶"
     }
 
     /// 当前是否 2 阶
     var isOrder2: Bool { model.order == 2 }
 
+    /// 当前是否为高阶（4~10，无降阶自动求解，仅手动可玩）
+    var isHighOrder: Bool { model.order >= 4 }
+
     /// 2 阶状态（order==2 时非 nil）
     var cube2x2: Cube2x2? { model.cube2 }
 
-    /// 按当前阶数返回用于渲染的 facelets（3阶=54，2阶=24）。
+    /// N 阶状态（order>=4 时非 nil）
+    var cubeNState: NCubeState? { model.cubeN }
+
+    /// 按当前阶数返回用于渲染的 facelets（3阶=54，2阶=24，4~10阶=6·N²）。
     /// Cube3DView 无 overrideFacelets 时（主页）据此渲染当前魔方。
     func renderedFacelets() -> [Int] {
         if model.order == 2 { return model.cube2?.facelets ?? [] }
+        if model.order >= 4 { return model.cubeN?.facelets ?? [] }
         return model.cube.facelets
     }
 
@@ -277,6 +284,11 @@ final class CubeSession: NSObject, ObservableObject {
     /// 以当前状态为起点，构建还原指引会话（后台求解，避免卡 UI）
     func solve() {
         guard !isSolving else { return }
+        // 高阶（4~10）暂不做降阶自动求解，仅支持手动还原
+        if model.order >= 4 {
+            message = "\(model.order) 阶暂不支持一键求解，先手动还原试试吧"
+            return
+        }
         let facelets = model.cube.facelets
         // 已还原则无需指引
         guard !CubeState(facelets: facelets).isSolved else {

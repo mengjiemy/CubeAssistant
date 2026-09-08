@@ -53,8 +53,13 @@ struct CubeModel: Equatable {
     /// **order==2 时的魔方状态**（24 facelet）。order==3 时为 nil（用 cube）。
     /// 隔离存储：2 阶完全走 Cube2x2 体系，不碰 3 阶 CubeState/求解器依赖。
     private(set) var cube2: Cube2x2?
+    /// **order>=4 时的魔方状态**（6·N² facelet）。order 为 2/3 时为 nil。
+    /// 隔离存储：N 阶走 NCubeState（MovePerms{N} 置换表），不碰 3 阶求解器。
+    private(set) var cubeN: NCubeState?
     /// 2 阶 undo 栈基准态（order==2 用）
     private(set) var checkpoint2: [Int]?
+    /// N 阶 undo 栈基准态（order>=4 用）
+    private(set) var checkpointN: [Int]?
     /// 用户自 checkpoint 之后实际施加的每一步（undo = 弹出并逆转动）
     private(set) var undoStack: [Move] = []
 
@@ -72,6 +77,10 @@ struct CubeModel: Equatable {
         if order == 2 {
             self.cube2 = Cube2x2(solved: true)
             self.checkpoint2 = self.cube2?.facelets
+        } else if order >= 4 {
+            let c = NCubeState(order: order, solved: true)
+            self.cubeN = c
+            self.checkpointN = c.facelets
         }
     }
 
@@ -80,6 +89,7 @@ struct CubeModel: Equatable {
     /// 是否已还原（按阶数判定）
     var isSolved: Bool {
         if order == 2 { return cube2?.isSolved ?? true }
+        if order >= 4 { return cubeN?.isSolved ?? true }
         return cube.isSolved
     }
 
@@ -104,6 +114,14 @@ struct CubeModel: Equatable {
             stopTiming()
             return
         }
+        if order >= 4 {
+            let c = NCubeState(order: order, solved: true)
+            cubeN = c
+            checkpointN = c.facelets
+            undoStack = []
+            stopTiming()
+            return
+        }
         cube = CubeState(solved: true)
         checkpointFacelets = cube.facelets
         undoStack = []
@@ -117,6 +135,16 @@ struct CubeModel: Equatable {
             // 2 阶打乱：God's number 11，给足步数（~12）保证足够乱
             cube2 = Cube2x2.scrambled(count: count <= 12 ? count : 12)
             checkpoint2 = cube2?.facelets
+            undoStack = []
+            stopTiming()
+            return
+        }
+        if order >= 4 {
+            var c = NCubeState(order: order, solved: true)
+            // N 阶打乱步数按阶数放大（每层需足够随机）
+            _ = c.scramble(count: max(20, min(count, 80)))
+            cubeN = c
+            checkpointN = c.facelets
             undoStack = []
             stopTiming()
             return
@@ -145,6 +173,17 @@ struct CubeModel: Equatable {
             stopTiming()
             return .success(())
         }
+        if order >= 4 {
+            let expect = NCubeGeometry(order).totalFacelets
+            guard facelets.count == expect else {
+                return .failure(.invalidState("\(order) 阶需 \(expect) 个色块"))
+            }
+            cubeN = NCubeState(facelets: facelets, order: order)
+            checkpointN = cubeN?.facelets
+            undoStack = []
+            stopTiming()
+            return .success(())
+        }
         let errs = CubeValidator.validate(facelets: facelets)
         guard errs.isEmpty else {
             return .failure(.invalidState(errs.map { "\($0)" }.joined(separator: "、")))
@@ -167,6 +206,10 @@ struct CubeModel: Equatable {
             cube2?.apply(move.rawValue)
             return cube2?.isSolved ?? false
         }
+        if order >= 4 {
+            cubeN?.apply(move.rawValue)
+            return cubeN?.isSolved ?? false
+        }
         cube.apply(move.rawValue)
         return cube.isSolved
     }
@@ -179,6 +222,10 @@ struct CubeModel: Equatable {
         guard let last = undoStack.popLast() else { return false }
         if order == 2 {
             cube2?.apply(last.inverted().rawValue)
+            return true
+        }
+        if order >= 4 {
+            cubeN?.apply(last.inverted().rawValue)
             return true
         }
         cube.apply(last.inverted().rawValue)

@@ -97,17 +97,33 @@ struct HomeView: View {
                     .font(.title2.weight(.bold))
                     .foregroundColor(.white)
                 Spacer()
-                // 阶数切换（2 阶 / 3 阶）
-                Picker("阶数", selection: Binding(
-                    get: { session.order },
-                    set: { session.setOrder($0) }
-                )) {
-                    Text("2阶").tag(2)
-                    Text("3阶").tag(3)
+                // 阶数切换（2~10 阶）。4~10 为高阶：可打乱/手动转/判定还原，暂无自动求解。
+                Menu {
+                    ForEach(2...10, id: \.self) { o in
+                        Button {
+                            session.setOrder(o)
+                        } label: {
+                            if o == session.order {
+                                Label("\(o) 阶", systemImage: "checkmark")
+                            } else {
+                                Text("\(o) 阶")
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.grid.3x3.fill")
+                            .font(.caption2)
+                        Text("\(session.order)阶")
+                            .font(.caption.weight(.semibold))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.25)))
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 110)
-                .tint(Color(red: 0.04, green: 0.52, blue: 1.0))
                 Button {
                     session.setIdentity(session.identity == .physical ? .virtual : .physical)
                 } label: {

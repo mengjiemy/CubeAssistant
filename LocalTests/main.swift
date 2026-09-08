@@ -298,5 +298,36 @@ do {
     check(!m3.isSolved, "3 阶打乱后非还原")
 }
 
+// ---- CubeModel.order >= 4（v16 N 阶可玩：4~10 阶打乱/手动转/还原判定/undo/setFacelets）----
+for order in 4...10 {
+    do {
+        var m = CubeModel(order: order)
+        check(m.order == order && m.isSolved, "\(order) 阶初始还原")
+        check(m.cubeN != nil, "\(order) 阶有 cubeN 状态")
+        check(m.cubeN!.facelets.count == 6 * order * order, "\(order) 阶面片数 = \(6*order*order)")
+        // 打乱后非还原
+        m.scramble(count: order * 8)
+        check(!m.isSolved, "\(order) 阶打乱后非还原")
+        // 手动转一步不还原
+        _ = m.apply(.R)
+        check(!m.isSolved, "\(order) 阶 apply R 后仍非还原")
+        // undo 应回到打乱态（非还原）
+        check(m.undo(), "\(order) 阶 undo 有效")
+        check(!m.isSolved, "\(order) 阶 undo 回打乱态(非还原)")
+        // reset 回到还原
+        m.reset()
+        check(m.isSolved, "\(order) 阶 reset 还原")
+        // setFacelets：建一个乱序（单面转 90° 后取面片）应合法且非还原
+        let facelets = NCubeState.moveTable(order: order)[0].enumerated().map { i, _ in
+            // 构造合法乱序：从还原态应用一步 U 后的 facelets
+            var s = NCubeState(order: order, solved: true); s.apply(0); return s.facelets[i]
+        }
+        let r = m.setFacelets(facelets)
+        if case .success = r { check(!m.isSolved, "\(order) 阶 setFacelets 乱序非还原") }
+        else { check(false, "\(order) 阶 setFacelets 应合法") }
+    }
+}
+print("  4~10 阶 CubeModel 可玩链路全通过")
+
 print("\n========== 结果：\(passed) 通过 / \(failed) 失败 ==========")
 if failed > 0 { exit(1) } else { print("✅ 全部通过") }

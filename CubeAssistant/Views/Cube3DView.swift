@@ -48,10 +48,13 @@ struct Cube3DView: UIViewRepresentable {
         scnView.scene = scene
         context.coordinator.scene = scene
         let initial = resolveFacelets()
-        // 按阶数构建：2 阶走独立路径（8 块），3 阶走原路径（26 块）
+        // 按阶数构建：2 阶走独立路径（8 块），3 阶走原路径（26 块），>=4 阶走高阶渲染
         if order == 2 {
             context.coordinator.currentOrder = 2
             context.coordinator.buildCube2x2(facelets: initial)
+        } else if order >= 4 {
+            context.coordinator.currentOrder = order
+            context.coordinator.buildCubeN(order: order, facelets: initial)
         } else {
             context.coordinator.currentOrder = 3
             context.coordinator.buildCube(facelets: initial)
@@ -63,7 +66,8 @@ struct Cube3DView: UIViewRepresentable {
         let camera = SCNNode()
         camera.camera = SCNCamera()
         camera.camera?.fieldOfView = 38
-        let distScale: Float = (order == 2) ? 0.52 : 1.0
+        // 相机距离随阶数缩放：2 阶拉近，N 阶(>=4)拉远以容纳更大体积
+        let distScale: Float = Self.cameraScale(for: order)
         camera.position = SCNVector3(4.5 * distScale, 4.0 * distScale, 6.5 * distScale)
         camera.look(at: SCNVector3(0, 0, 0))
         scene.rootNode.addChildNode(camera)
@@ -110,14 +114,17 @@ struct Cube3DView: UIViewRepresentable {
         }
         // 阶数变化：需重建 cube（cubelet 集合不同）
         if order != co.currentOrder {
-            // 同步 defaultCameraNode 的距离：2 阶整体小，拉近到一半
-            let distScale: Float = (order == 2) ? 0.52 : 1.0
+            // 同步 defaultCameraNode 的距离：按阶数缩放
+            let distScale = Self.cameraScale(for: order)
             co.defaultCameraNode?.position = SCNVector3(4.5 * distScale, 4.0 * distScale, 6.5 * distScale)
             co.defaultCameraNode?.look(at: SCNVector3(0, 0, 0))
             let f = resolveFacelets()
             if order == 2 {
                 co.currentOrder = 2
                 co.buildCube2x2(facelets: f)
+            } else if order >= 4 {
+                co.currentOrder = order
+                co.buildCubeN(order: order, facelets: f)
             } else {
                 co.currentOrder = 3
                 co.buildCube(facelets: f)
@@ -135,9 +142,18 @@ struct Cube3DView: UIViewRepresentable {
         co.lastFacelets = facelets
         if co.currentOrder == 2 {
             co.applyFacelets2x2(facelets)
+        } else if co.currentOrder >= 4 {
+            co.applyFaceletsN(facelets)
         } else {
             co.applyFacelets(facelets)
         }
+    }
+
+    /// 相机距离随阶数缩放：2 阶拉近(0.52)，3 阶基准(1.0)，N 阶拉远以容纳更大体积。
+    static func cameraScale(for order: Int) -> Float {
+        if order == 2 { return 0.52 }
+        if order >= 4 { return Float(order) / 3.0 }
+        return 1.0
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -160,6 +176,11 @@ struct Cube3DView: UIViewRepresentable {
         var currentHighlightFace: Face? = nil
         /// 高亮描边节点集合（key = cubelet key + dir）
         var highlightNodes: [String: SCNNode] = [:]
+        /// —— 高阶（4~10）渲染节点 ——
+        /// N 阶魔方所有已建节点（便于整体拆除重建）
+        var cubeNAllNodes: [SCNNode] = []
+        /// facelet 索引 → 对应 sticker 节点（repaint 用）
+        var cubeNStickers: [Int: SCNNode] = [:]
 
         /// 回正相机到默认视角（顶面朝上、前面朝前），按阶数调距离。
         /// 实现关键：SCNView 启用 allowsCameraControl 时，实际渲染的 pointOfView 由
@@ -427,8 +448,105 @@ struct Cube3DView: UIViewRepresentable {
             }
         }
 
+        // MARK: - 高阶（4~10 阶）渲染路径
+        // 说明：N 阶不做逐块(cubelet)建模 + 转动动画（那需要为每层维护独立旋转组，复杂度随
+        // 阶数爆炸且难在真机验证），而采用「六面贴纸网格」渲染：一个实体核心 + 每面 N×N 个
+        // 贴纸平面（SCNPlane），每个贴纸 = 一个 facelet，颜色直接读该 facelet 值。
+        // 转动 = 状态层 apply → 这里 applyFaceletsN 整面重绘贴纸颜色（无 3D 旋转动画），
+        // 视觉上是「该面贴纸颜色即时变化」，配合 3 阶/2 阶已有的判定即可「玩起来」。
+        // 优点：facelet ↔ 物理贴纸一一对应，永不与 movePerms 错位，逻辑可本地验证。
+        func buildCubeN(order: Int, facelets: [Int]) {
+            // 拆除旧 N 阶节点
+            cubeNAllNodes.forEach { $0.removeFromParentNode() }
+            cubeNAllNodes.removeAll()
+            cubeNStickers.removeAll()
+            highlightNodes.forEach { $0.value.removeFromParentNode() }
+            highlightNodes.removeAll()
+
+            let N = order
+            let halfExtent = Float(N) / 2.0          // 实体核心半长
+            // 实体核心：黑色（透出黑色「间隙」观感，像贴纸魔方）
+            let core = SCNBox(width: CGFloat(N), height: CGFloat(N), length: CGFloat(N), chamferRadius: 0.02)
+            let coreMat = SCNMaterial()
+            coreMat.diffuse.contents = UIColor(red: 0.02, green: 0.02, blue: 0.03, alpha: 1)
+            coreMat.lightingModel = .physicallyBased
+            coreMat.roughness.contents = 0.9
+            coreMat.metalness.contents = 0.0
+            core.materials = [coreMat]
+            let coreNode = SCNNode(geometry: core)
+            coreNode.name = "cubeN_core"
+            scene.rootNode.addChildNode(coreNode)
+            cubeNAllNodes.append(coreNode)
+
+            let stickerSize: Float = 0.88          // 单位格贴纸（留黑缝 0.12）
+            let normalDistance = halfExtent + 0.02 // 贴纸微微凸出核心表面
+            // 每个面：法向 + 两个面内轴的方向向量（把 facelet(row,col) 布局到该面）
+            // 面 0..5 = U,R,F,D,L,B
+            // 面内布局统一：col 沿「轴A」，row 沿「轴B」，均按贴纸格序 (row,col)→(c- (N-1)/2, r-(N-1)/2)
+            // 物理坐标用 Float，中心 = (坐标) - (N-1)/2
+            let halfGrid = Float(N - 1) / 2.0
+            let faces: [(dir: (Float, Float, Float), axA: (Float, Float, Float), axB: (Float, Float, Float))] = [
+                // U (+y 上)
+                (dir: (0, 1, 0), axA: (1, 0, 0), axB: (0, 0, -1)),
+                // R (+x 右)
+                (dir: (1, 0, 0), axA: (0, 0, 1), axB: (0, -1, 0)),
+                // F (+z 前)
+                (dir: (0, 0, 1), axA: (1, 0, 0), axB: (0, -1, 0)),
+                // D (-y 下)
+                (dir: (0, -1, 0), axA: (1, 0, 0), axB: (0, 0, -1)),
+                // L (-x 左)
+                (dir: (-1, 0, 0), axA: (0, 0, 1), axB: (0, 1, 0)),
+                // B (-z 后)
+                (dir: (0, 0, -1), axA: (-1, 0, 0), axB: (0, 1, 0)),
+            ]
+            let perFace = N * N
+            for f in 0..<6 {
+                let spec = faces[f]
+                for r in 0..<N {
+                    for c in 0..<N {
+                        let idx = f * perFace + r * N + c
+                        let plane = SCNPlane(width: CGFloat(stickerSize), height: CGFloat(stickerSize))
+                        let mat = SCNMaterial()
+                        mat.diffuse.contents = innerColor
+                        mat.lightingModel = .physicallyBased
+                        mat.roughness.contents = 0.35
+                        mat.metalness.contents = 0.0
+                        mat.isDoubleSided = true
+                        plane.materials = [mat]
+                        let node = SCNNode(geometry: plane)
+                        node.name = "stickerN_\(idx)"
+                        let u = Float(c) - halfGrid
+                        let v = Float(r) - halfGrid
+                        let pos = SCNVector3(
+                            spec.dir.0 * normalDistance + spec.axA.0 * u + spec.axB.0 * v,
+                            spec.dir.1 * normalDistance + spec.axA.1 * u + spec.axB.1 * v,
+                            spec.dir.2 * normalDistance + spec.axA.2 * u + spec.axB.2 * v)
+                        node.position = pos
+                        // 让贴纸面向外：法向 = pos 方向（垂直于核心表面）
+                        node.look(at: SCNVector3(spec.dir.0 * (halfExtent * 3),
+                                                 spec.dir.1 * (halfExtent * 3),
+                                                 spec.dir.2 * (halfExtent * 3)))
+                        scene.rootNode.addChildNode(node)
+                        cubeNAllNodes.append(node)
+                        cubeNStickers[idx] = node
+                    }
+                }
+            }
+            applyFaceletsN(facelets)
+            if let f = currentHighlightFace { applyHighlight(face: f) }
+        }
+
+        /// 给高阶魔方重绘颜色：每个 facelet 值 → 对应贴纸节点颜色
+        func applyFaceletsN(_ facelets: [Int]) {
+            for (idx, node) in cubeNStickers {
+                guard idx < facelets.count else { continue }
+                let colorId = facelets[idx]
+                guard colorId >= 0 && colorId < colorMap.count else { continue }
+                node.geometry?.materials.first?.diffuse.contents = colorMap[colorId]
+            }
+        }
+
         // MARK: - 选面高亮（按钮/手势选中时，对应面 cubelet 加半透明描边框）
-        /// 应用高亮：face=nil 时清空；非 nil 时给该面所有可见 cubelet 描边。
         func applyHighlight(face: Face?) {
             currentHighlightFace = face
             // 先清空所有高亮节点
@@ -448,6 +566,27 @@ struct Cube3DView: UIViewRepresentable {
             }
             // 高亮色：iOS 系统蓝（与按钮主色一致）
             let highlightColor = UIColor(red: 0.04, green: 0.52, blue: 1.0, alpha: 0.55)
+            // 高阶（4~10）：高亮 = 给该面每个贴纸叠一块半透明蓝色罩（无 cubelet 几何，直接叠在贴纸上）
+            if currentOrder >= 4 {
+                let perFace = currentOrder * currentOrder
+                let fIdx = face.rawValue
+                for idx in (fIdx * perFace)..<((fIdx + 1) * perFace) {
+                    guard let sticker = cubeNStickers[idx] else { continue }
+                    let overlay = SCNPlane(width: 0.96, height: 0.96)
+                    let m = SCNMaterial()
+                    m.diffuse.contents = highlightColor
+                    m.lightingModel = .constant
+                    m.isDoubleSided = true
+                    overlay.materials = [m]
+                    let overlayNode = SCNNode(geometry: overlay)
+                    overlayNode.name = "highlightN_\(idx)"
+                    overlayNode.position = SCNVector3(0, 0, 0)
+                    overlayNode.orientation = sticker.orientation
+                    sticker.addChildNode(overlayNode)
+                    highlightNodes["n_\(idx)"] = overlayNode
+                }
+                return
+            }
             // 该方向上的 cubelet 集合（按阶数分派）
             let targets: [SCNNode]
             if currentOrder == 2 {
