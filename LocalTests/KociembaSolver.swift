@@ -371,14 +371,9 @@ public struct KociembaSolver {
     }
 
     // MARK: - 公开 API
-    /// 输入 54 颜色 id 的魔方，返回转动索引序列（0..17），无解返回 nil。
-    public static func solve(facelets: [Int]) -> [Int]? {
-        guard facelets.count == 54 else { return nil }
-        let cube = toCubie(facelets)
-        return solveCubie(cube)
-    }
-
-    /// 返回 `Move` 序列（便于 UI 使用）。
+    /// 输入 54 颜色 id 的魔方，返回转动序列（Move 枚举，rawValue 即转动索引 0..17），无解返回 nil。
+    /// 注意：只保留 [Move]? 一个重载，避免与历史 [Int]? 版本产生「返回类型不同但签名相同」
+    /// 的重载歧义（Swift 无法从调用上下文推断，需显式标注）。[Int] 调用方可 `move.rawValue`。
     public static func solve(facelets: [Int]) -> [Move]? {
         guard facelets.count == 54 else { return nil }
         let cube = toCubie(facelets)

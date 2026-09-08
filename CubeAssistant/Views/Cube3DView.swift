@@ -13,7 +13,14 @@ import SceneKit
 struct Cube3DView: UIViewRepresentable {
     @ObservedObject var session: CubeSession
 
-    init(session: CubeSession) { self.session = session }
+    /// 可选：覆盖渲染的 facelets（学习页内嵌魔方用，展示「轨道中间态」而非 session.cube）。
+    /// 为 nil 时按 session.cube 渲染（主页默认）。
+    var overrideFacelets: [Int]? = nil
+
+    init(session: CubeSession, overrideFacelets: [Int]? = nil) {
+        self.session = session
+        self.overrideFacelets = overrideFacelets
+    }
 
     func makeUIView(context: Context) -> SCNView {
         let scnView = SCNView()
@@ -27,8 +34,9 @@ struct Cube3DView: UIViewRepresentable {
         let scene = SCNScene()
         scnView.scene = scene
         context.coordinator.scene = scene
-        context.coordinator.buildCube(facelets: session.cube.facelets)
-        context.coordinator.lastFacelets = session.cube.facelets
+        let initial = overrideFacelets ?? session.cube.facelets
+        context.coordinator.buildCube(facelets: initial)
+        context.coordinator.lastFacelets = initial
 
         // 摄像机
         let camera = SCNNode()
@@ -76,7 +84,7 @@ struct Cube3DView: UIViewRepresentable {
             co.lastCameraResetToken = session.cameraResetToken
             co.resetCamera()
         }
-        let facelets = session.cube.facelets
+        let facelets = overrideFacelets ?? session.cube.facelets
         guard facelets != co.lastFacelets else { return }
         co.lastFacelets = facelets
         co.applyFacelets(facelets)

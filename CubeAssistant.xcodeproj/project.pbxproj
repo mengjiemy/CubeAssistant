@@ -22,6 +22,8 @@
 		8BDEB655680B4CDA9BBAD7BEDB7A8CFF /* CubeModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD65555B65EE4937BFACED784663FD22 /* CubeModel.swift */; };
 		E72C1A9B6ABF48E5955522E32BB1AAC5 /* SolveSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A78323853BA3496597F9E46575AF85B6 /* SolveSession.swift */; };
 		D7E8F90A1B2C3D4E5F60718293 /* ProfileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5C6 /* ProfileStore.swift */; };
+		C1BF0BFAFA57DC0B8A8EB5FC /* BackupStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAD9DAFF975F22BBE70CD937 /* BackupStore.swift */; };
+		BDEA225A7FA8C55556F9A506 /* Cube2x2.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE51F286B0DDCEEC135A1750 /* Cube2x2.swift */; };
 		C8C35B060DBE4EBC9BBD2605 /* CubeValidator.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CubeValidator.swift; sourceTree = "<group>"; };
 		9A1B2C3D4E5F60718293A4B5 /* CubeGeometry.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CubeGeometry.swift; sourceTree = "<group>"; };
 		210F0D839B7A4FA997493A80 /* FormulaLibrary.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FormulaLibrary.swift; sourceTree = "<group>"; };
@@ -39,6 +41,8 @@
 		FD65555B65EE4937BFACED784663FD22 /* CubeModel.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CubeModel.swift; sourceTree = "<group>"; };
 		A78323853BA3496597F9E46575AF85B6 /* SolveSession.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SolveSession.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5C6 /* ProfileStore.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ProfileStore.swift; sourceTree = "<group>"; };
+		EAD9DAFF975F22BBE70CD937 /* BackupStore.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = BackupStore.swift; sourceTree = "<group>"; };
+		AE51F286B0DDCEEC135A1750 /* Cube2x2.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Cube2x2.swift; sourceTree = "<group>"; };
 		F1AA314053194CF3A50F8849 /* CubeAssistant.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CubeAssistant.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CC78A228DA8D425FAEC87D01 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (
 		); runOnlyForDeploymentPostprocessing = 0; };
@@ -62,6 +66,8 @@
 				8BDEB655680B4CDA9BBAD7BEDB7A8CFF /* CubeModel.swift in Sources */,
 				E72C1A9B6ABF48E5955522E32BB1AAC5 /* SolveSession.swift in Sources */,
 				D7E8F90A1B2C3D4E5F60718293 /* ProfileStore.swift in Sources */,
+				C1BF0BFAFA57DC0B8A8EB5FC /* BackupStore.swift in Sources */,
+				BDEA225A7FA8C55556F9A506 /* Cube2x2.swift in Sources */,
 		); runOnlyForDeploymentPostprocessing = 0; };
 		78C2723031BF4CCA8354FE85 /* CubeAssistant */ = {isa = PBXGroup; children = (
 				0CF911F67A564FFF91FEAF64,
@@ -81,6 +87,8 @@
 				FD65555B65EE4937BFACED784663FD22,
 				A78323853BA3496597F9E46575AF85B6,
 				A1B2C3D4E5F60718293A4B5C6,
+				EAD9DAFF975F22BBE70CD937,
+				AE51F286B0DDCEEC135A1750,
 				8839179219F04D50AF89DE3B
 			); path = CubeAssistant; sourceTree = "<group>"; };
 		F37FC9554F3B4E52AF2B4737 /* Engine */ = {isa = PBXGroup; children = (
@@ -97,7 +105,9 @@
 				E6C850129D374815B9CDFFF4,
 				FD65555B65EE4937BFACED784663FD22,
 				A78323853BA3496597F9E46575AF85B6,
-				A1B2C3D4E5F60718293A4B5C6
+				A1B2C3D4E5F60718293A4B5C6,
+				EAD9DAFF975F22BBE70CD937,
+				AE51F286B0DDCEEC135A1750
 			); path = Models; sourceTree = "<group>"; };
 		A6EE26F7E31C4D94BE5B4DF0 /* Views */ = {isa = PBXGroup; children = (
 				8123FD06A183454EAF58AE43,

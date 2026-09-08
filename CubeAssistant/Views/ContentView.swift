@@ -1,4 +1,6 @@
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 /// 主界面：4-Tab 框架（主页 / 扫描 / 学习 / 我的）。
 /// 主题：深空黑底 + iOS 系统蓝 + 玻璃卡片 + SF Symbols。
@@ -597,15 +599,43 @@ struct LearnView: View {
                     .foregroundColor(.white)
             }
 
-            // 当前步大字指令（中文 + 公式）
+            // 内嵌 3D 魔方预览：实时渲染「当前进度对应的状态」（逐步高亮模式的视觉锚点）
+            Cube3DView(session: session, overrideFacelets: sol.facelets(afterStep: session.alignedStep))
+                .frame(height: 220)
+                .clipShape(RoundedRectangle(cornerRadius: 20))
+                .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            Text("上图为走完当前步后的状态，跟着转即可")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+
+            // 当前步大字指令（按档位切换：新手=大白话 / 中文=中文+公式 / 专业=纯公式）
             if !isComplete, let move = sol.move(at: session.alignedStep) {
                 VStack(spacing: 6) {
-                    Text(move.chineseInstruction)
-                        .font(.title3.weight(.bold))
-                        .foregroundColor(.white)
-                    Text(move.notation)
-                        .font(.system(.title, design: .monospaced).weight(.bold))
-                        .foregroundColor(Color(red: 0.4, green: 0.7, blue: 1.0))
+                    switch session.profile.guideTier {
+                    case .beginner:
+                        // 新手：大白话 + 高亮强调
+                        Text(move.chineseInstruction)
+                            .font(.title3.weight(.bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(
+                                Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0).opacity(0.25))
+                            )
+                    case .chinese:
+                        // 中文：中文指令 + 公式字母
+                        Text(move.chineseInstruction)
+                            .font(.title3.weight(.bold))
+                            .foregroundColor(.white)
+                        Text(move.notation)
+                            .font(.system(.title, design: .monospaced).weight(.bold))
+                            .foregroundColor(Color(red: 0.4, green: 0.7, blue: 1.0))
+                    case .pro:
+                        // 专业：纯公式大字
+                        Text(move.notation)
+                            .font(.system(.title, design: .monospaced).weight(.bold))
+                            .foregroundColor(Color(red: 0.4, green: 0.7, blue: 1.0))
+                    }
                 }
                 .padding(.vertical, 8)
             }
@@ -773,9 +803,14 @@ struct MineView: View {
     /// 当前编辑的资料草稿（编辑弹层用）
     @State private var editingNickname = ""
     @State private var editingSignature = ""
+    @State private var editingTier: GuideTier = .chinese
     @State private var showEditProfile = false
     /// 历史管理弹确认
     @State private var showClearConfirm = false
+    /// 数据备份：导出分享 / 导入选文件
+    @State private var showExportShare = false
+    @State private var showImportPicker = false
+    @State private var backupMessage: String? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -793,7 +828,9 @@ struct MineView: View {
                 VStack(spacing: 14) {
                     profileCard
                     statsCard
+                    trendCard
                     achievementsSection
+                    backupSection
                     historySection
                 }
                 .padding(.bottom, 20)
@@ -803,11 +840,102 @@ struct MineView: View {
         .sheet(isPresented: $showEditProfile) {
             editProfileSheet
         }
+        .sheet(isPresented: $showExportShare) {
+            if let data = session.exportBackupData() {
+                ShareSheet(items: [backupFileURL(from: data)])
+            }
+        }
+        .sheet(isPresented: $showImportPicker) {
+            DocumentPicker { url in
+                handleImport(url)
+            }
+        }
         .alert("清空全部还原记录？", isPresented: $showClearConfirm) {
             Button("取消", role: .cancel) {}
             Button("清空", role: .destructive) { session.clearHistory() }
         } message: {
             Text("此操作不可恢复")
+        }
+        .alert("数据备份", isPresented: Binding(
+            get: { backupMessage != nil },
+            set: { if !$0 { backupMessage = nil } }
+        )) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(backupMessage ?? "")
+        }
+    }
+
+    // MARK: 数据备份区块
+    private var backupSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.up.arrow.down.square")
+                    .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                Text("数据备份")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                Spacer()
+            }
+            Text("导出 JSON 备份成绩，换机/重装后可导入恢复")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            HStack(spacing: 10) {
+                Button {
+                    showExportShare = true
+                } label: {
+                    Label("导出", systemImage: "square.and.arrow.up")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    showImportPicker = true
+                } label: {
+                    Label("导入", systemImage: "square.and.arrow.down")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(.ultraThinMaterial))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 18).fill(.ultraThinMaterial))
+        .padding(.horizontal, 20)
+    }
+
+    /// 把导出数据写到临时文件，便于分享到「文件」App
+    private func backupFileURL(from data: Data) -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("魔方学院备份_\(Self.fileTimestamp()).json")
+        try? data.write(to: url)
+        return url
+    }
+
+    private static func fileTimestamp() -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "yyyyMMdd_HHmmss"
+        return f.string(from: Date())
+    }
+
+    private func handleImport(_ url: URL) {
+        guard let data = try? Data(contentsOf: url) else {
+            backupMessage = "读取文件失败"
+            return
+        }
+        if let err = session.importBackupData(data) {
+            backupMessage = err
+        } else {
+            backupMessage = "导入成功，成绩与资料已恢复"
         }
     }
 
@@ -842,6 +970,7 @@ struct MineView: View {
             Button {
                 editingNickname = session.profile.nickname
                 editingSignature = session.profile.signature
+                editingTier = session.profile.guideTier
                 showEditProfile = true
             } label: {
                 Image(systemName: "pencil")
@@ -885,6 +1014,38 @@ struct MineView: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    // MARK: 成绩趋势（最近 20 次用时折线）
+    private var trendCard: some View {
+        let recent = session.history.prefix(20).map(\.duration)  // history 已按时间倒序，prefix 取最近
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .foregroundColor(Color(red: 0.04, green: 0.52, blue: 1.0))
+                Text("成绩趋势")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                Spacer()
+                Text(recent.isEmpty ? "" : "最近 \(recent.count) 次")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            if recent.count < 2 {
+                Text("完成 2 次以上还原后显示趋势")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+            } else {
+                TrendChart(durations: recent.reversed())  // 旧→新，从左到右
+                    .frame(height: 120)
+            }
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 18).fill(.ultraThinMaterial))
+        .padding(.horizontal, 20)
     }
 
     // MARK: 成就
@@ -1004,6 +1165,25 @@ struct MineView: View {
             TextField("签名", text: $editingSignature)
                 .textFieldStyle(.roundedBorder)
                 .padding(.horizontal, 24)
+
+            // 转动提示档位（新手图卡 / 中文 / 专业）
+            VStack(alignment: .leading, spacing: 6) {
+                Text("转动提示档位")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Picker("档位", selection: $editingTier) {
+                    ForEach(GuideTier.allCases, id: \.self) { tier in
+                        Text(tier.rawValue).tag(tier)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 24)
+                Text(editingTier.subtitle)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 24)
+            }
+
             Button("保存") {
                 let nick = editingNickname.trimmingCharacters(in: .whitespaces)
                 if nick.isEmpty || nick.count > 16 {
@@ -1011,6 +1191,7 @@ struct MineView: View {
                 } else {
                     session.profile.nickname = nick
                     session.profile.signature = editingSignature.trimmingCharacters(in: .whitespaces)
+                    session.profile.guideTier = editingTier
                     session.saveProfile()
                     showEditProfile = false
                 }
@@ -1021,7 +1202,7 @@ struct MineView: View {
             Spacer()
         }
         .padding(.top, 30)
-        .presentationDetents([.height(260)])
+        .presentationDetents([.height(340)])
     }
 
     /// 中文日期格式，如「2026年9月8日 15:32」
@@ -1093,6 +1274,97 @@ enum Achievement: String, CaseIterable {
         case .fiftySolves: return "累计完成 50 次（当前 \(session.totalSolves)）"
         case .underMinute:
             return session.bestTime.map { "最快 \(MineView.timeText($0))" } ?? "单次用时进 60 秒"
+        }
+    }
+}
+
+// MARK: - 系统分享 / 文件导入（UIKit 包装）
+
+/// 成绩趋势折线图（纯 SwiftUI 原生绘制，无第三方依赖）。
+struct TrendChart: View {
+    let durations: [TimeInterval]  // 旧 → 新
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
+            let pad: CGFloat = 12
+            let minD = durations.min() ?? 0
+            let maxD = durations.max() ?? 1
+            let range = max(maxD - minD, 0.5)  // 至少 0.5s 范围，避免除零/线太平
+
+            ZStack {
+                // 网格线（3 条横向参考线）
+                ForEach(0..<3, id: \.self) { i in
+                    let y = pad + (h - 2 * pad) * CGFloat(i) / 2
+                    Path { p in
+                        p.move(to: CGPoint(x: pad, y: y))
+                        p.addLine(to: CGPoint(x: w - pad, y: y))
+                    }
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                }
+
+                // 折线
+                if durations.count >= 2 {
+                    let step = (w - 2 * pad) / CGFloat(durations.count - 1)
+                    Path { p in
+                        for (i, d) in durations.enumerated() {
+                            let x = pad + step * CGFloat(i)
+                            let y = pad + (h - 2 * pad) * (1 - CGFloat((d - minD) / range))
+                            if i == 0 { p.move(to: CGPoint(x: x, y: y)) }
+                            else { p.addLine(to: CGPoint(x: x, y: y)) }
+                        }
+                    }
+                    .stroke(
+                        LinearGradient(colors: [Color(red: 0.04, green: 0.52, blue: 1.0),
+                                                Color(red: 0.4, green: 0.7, blue: 1.0)],
+                                       startPoint: .leading, endPoint: .trailing),
+                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round)
+                    )
+
+                    // 数据点
+                    ForEach(Array(durations.enumerated()), id: \.offset) { i, d in
+                        let x = pad + step * CGFloat(i)
+                        let y = pad + (h - 2 * pad) * (1 - CGFloat((d - minD) / range))
+                        Circle()
+                            .fill(Color(red: 0.04, green: 0.52, blue: 1.0))
+                            .frame(width: 5, height: 5)
+                            .position(x: x, y: y)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 分享面板（导出备份 JSON 到「文件」App / AirDrop 等）。
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
+}
+
+/// 文件选择器（导入备份 JSON）。
+struct DocumentPicker: UIViewControllerRepresentable {
+    let onPick: (URL) -> Void
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.json])
+        picker.delegate = context.coordinator
+        return picker
+    }
+    func updateUIViewController(_ vc: UIDocumentPickerViewController, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let onPick: (URL) -> Void
+        init(onPick: @escaping (URL) -> Void) { self.onPick = onPick }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            guard let url = urls.first else { return }
+            // 需先请求安全作用域访问
+            let ok = url.startAccessingSecurityScopedResource()
+            defer { if ok { url.stopAccessingSecurityScopedResource() } }
+            onPick(url)
         }
     }
 }

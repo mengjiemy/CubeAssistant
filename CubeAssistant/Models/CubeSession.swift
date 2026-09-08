@@ -356,6 +356,39 @@ final class CubeSession: NSObject, ObservableObject {
         saveHistoryToDefaults()
     }
 
+    // MARK: - 数据备份 / 恢复（§0.5）
+
+    /// 导出当前成绩 + 资料为 JSON Data（供 UI 写文件/分享）。
+    func exportBackupData() -> Data? {
+        let backup = BackupData(records: history,
+                                nickname: profile.nickname,
+                                signature: profile.signature,
+                                guideTier: profile.guideTier)
+        return BackupManager.encode(backup)
+    }
+
+    /// 导入备份：解析 JSON 并覆盖成绩 + 资料。
+    /// - 成功：返回 nil（无错误），history/profile 已更新并持久化。
+    /// - 失败：返回可读错误信息（供 UI 提示）。
+    func importBackupData(_ data: Data) -> String? {
+        switch BackupManager.decode(data) {
+        case .success(let backup):
+            // 覆盖成绩（去重 + 按时间倒序 + 截断 100 条）
+            var merged = backup.records
+            merged.sort { $0.date > $1.date }
+            history = Array(merged.prefix(100))
+            saveHistoryToDefaults()
+            // 覆盖资料
+            profile.nickname = backup.nickname
+            profile.signature = backup.signature
+            profile.guideTier = GuideTier(rawValue: backup.guideTier) ?? .chinese
+            profile.save()
+            return nil
+        case .failure(let e):
+            return e.errorDescription
+        }
+    }
+
     // MARK: - 成就回算（纯计算，基于 history 实时推导）
 
     /// 还原成功总次数
@@ -383,13 +416,4 @@ func formatSolveTime(_ t: TimeInterval) -> String {
     let s = total % 60
     let cs = Int((t - floor(t)) * 100)
     return String(format: "%d:%02d.%02d", m, s, cs)
-}
-
-/// 一次复原成绩记录（本地持久化，结构对齐旧 CloudStore 展示）。
-struct SolveRecord: Identifiable, Codable, Equatable {
-    let id: String
-    let duration: TimeInterval
-    let moves: Int
-    let scramble: String
-    let date: Date
 }

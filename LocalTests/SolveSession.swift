@@ -55,6 +55,17 @@ struct SolveSession: Equatable {
         return orbit[i]
     }
 
+    /// 计算「执行完轨道前 k 步」后的魔方状态 facelets（k=0 即起点乱态，k=totalSteps 即还原态）。
+    /// 供学习页内嵌 3D 魔方预览当前进度对应的状态。
+    func facelets(afterStep k: Int) -> [Int] {
+        let steps = min(max(k, 0), orbit.count)
+        var state = CubeState(facelets: startFacelets)
+        for i in 0..<steps {
+            state.apply(orbit[i].rawValue)
+        }
+        return state.facelets
+    }
+
     /// 计算当前状态与轨道对齐到第几步（0..totalSteps）。
     /// 从 startFacelets 出发，若 state == startFacelets 依次施加 orbit[0..<k] 则返回 k。
     /// - 返回 `Int`：对齐到第 k 步（0 = 仍在起点，totalSteps = 已完全还原）

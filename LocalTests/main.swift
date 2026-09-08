@@ -111,7 +111,11 @@ for (i, mv) in session.orbit.enumerated() {
 check(alignedAll, "严格跟随每步都精确对齐到对应位置")
 check(session.alignedStep(of: follower) == session.totalSteps, "走完轨道对齐 totalSteps（已还原）")
 check(follower.isSolved, "走完轨道确实复原")
-// 脱轨：走错一步
+// facelets(afterStep:) —— 学习页 3D 预览用的轨道中间态
+check(session.facelets(afterStep: 0) == sCube.facelets, "afterStep(0) 返回起点乱态")
+check(CubeState(facelets: session.facelets(afterStep: session.totalSteps)).isSolved, "afterStep(totalSteps) 返回还原态")
+check(CubeState(facelets: session.facelets(afterStep: 1)) == CubeState(facelets: sCube.facelets).applying(session.orbit[0].rawValue),
+      "afterStep(1) 与手动转第1步一致")
 var derailed = CubeState(facelets: sCube.facelets)
 let expected = session.orbit[0]
 // 转一个"错误的"（非轨道第0步的转动）→ 应脱轨返回 nil
@@ -171,6 +175,78 @@ check(reloaded.nickname == "杰哥", "昵称持久化恢复")
 check(reloaded.guideTier == .pro, "档位持久化恢复")
 // 清理测试写入
 UserDefaults.standard.removeObject(forKey: "cube_profile_store_v1")
+
+// ---------- Cube2x2 2 阶魔方引擎 ----------
+print("\n【Cube2x2 · 2 阶引擎】")
+let c2solved = Cube2x2(solved: true)
+check(c2solved.facelets.count == 24, "2 阶 24 面片")
+check(c2solved.isSolved, "2 阶初始已还原")
+check(c2solved.facelets == [0,0,0,0, 1,1,1,1, 2,2,2,2, 3,3,3,3, 4,4,4,4, 5,5,5,5], "2 阶面片布局 U/R/F/D/L/B 各 4")
+// 每个基础转动 4 次应还原
+var c2four = Cube2x2(solved: true)
+var fourOK = true
+for m in [0, 3, 6, 9, 12, 15] {  // U R F D L B 的基础转动下标
+    var c = Cube2x2(solved: true)
+    for _ in 0..<4 { c.apply(m) }
+    if !c.isSolved { fourOK = false; print("  2阶转动 \(m) 4次未还原") }
+}
+check(fourOK, "2 阶每个基础转动 4 次还原")
+// 打乱后求解 + 按解还原
+var c2scrambled = Cube2x2.scrambled(count: 15)
+check(!c2scrambled.isSolved, "2 阶打乱后变乱")
+if let sol2 = Solver2x2.solve(c2scrambled.facelets) {
+    check(sol2.count > 0, "2 阶可求解 (\(sol2.count) 步)")
+    var r2 = c2scrambled
+    for m in sol2 { r2.apply(m.rawValue) }
+    check(r2.isSolved, "2 阶按解转回还原")
+} else {
+    check(false, "2 阶求解失败")
+}
+// 随机打乱求解稳定性（2 阶双向 BFS，单次约 3s，测 1 次验证正确性）
+var allSolved2 = true
+do {
+    var sc = Cube2x2.scrambled(count: 12)
+    if let sol = Solver2x2.solve(sc.facelets) {
+        for m in sol { sc.apply(m.rawValue) }
+        if !sc.isSolved { allSolved2 = false }
+    } else {
+        allSolved2 = false
+    }
+}
+check(allSolved2, "随机 2 阶打乱能求解并还原")
+
+// ---------- BackupStore 数据备份/恢复 ----------
+print("\n【BackupStore · 备份/恢复】")
+let rec1 = SolveRecord(id: "r1", duration: 12.34, moves: 25, scramble: "R U F", date: Date(timeIntervalSince1970: 1000))
+let rec2 = SolveRecord(id: "r2", duration: 45.67, moves: 30, scramble: "-", date: Date(timeIntervalSince1970: 2000))
+let backup = BackupData(records: [rec1, rec2], nickname: "杰哥", signature: "提速中", guideTier: .pro)
+check(backup.schemaVersion == 1, "schemaVersion=1")
+guard let json = BackupManager.encode(backup) else {
+    print("  ❌ 备份编码失败"); exit(1)
+}
+check(json.count > 0, "备份编码为非空 JSON")
+// 解码 roundtrip
+switch BackupManager.decode(json) {
+case .success(let restored):
+    check(restored.records.count == 2, "解码恢复 2 条记录")
+    check(restored.records[0].id == "r1" && abs(restored.records[0].duration - 12.34) < 0.01, "记录字段 roundtrip")
+    check(restored.nickname == "杰哥" && restored.guideTier == GuideTier.pro.rawValue, "资料字段 roundtrip")
+case .failure(let e):
+    check(false, "解码失败：\(e)")
+}
+// 非法数据拦截
+check(!BackupManager.isBackup(Data("not a json".utf8)), "非 JSON 拦截")
+check(!BackupManager.isBackup(Data("{\"foo\":1}".utf8)), "结构不匹配拦截")
+// 版本过高拦截
+var futureBackup = backup
+// 通过手工构造一个 version 2 的 JSON 测 unsupportedVersion
+let futureJSON = "{\"schemaVersion\":99,\"exportedAt\":\"2026-09-08T10:00:00Z\",\"records\":[],\"nickname\":\"x\",\"signature\":\"y\",\"guideTier\":\"chinese\"}"
+if let fd = futureJSON.data(using: .utf8) {
+    switch BackupManager.decode(fd) {
+    case .success: check(false, "版本过高应拦截")
+    case .failure(let e): check(e == .unsupportedVersion, "版本过高返回 unsupportedVersion")
+    }
+}
 
 print("\n========== 结果：\(passed) 通过 / \(failed) 失败 ==========")
 if failed > 0 { exit(1) } else { print("✅ 全部通过") }
