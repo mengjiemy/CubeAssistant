@@ -35,6 +35,7 @@
 		7AFE882B90DE239E8A7EDE74 /* MovePerms9.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E6196036CF6561FFF347490 /* MovePerms9.swift */; };
 		38ED0FB61693EC2070418197 /* MovePerms10.swift in Sources */ = {isa = PBXBuildFile; fileRef = F66C1B4F52FD67E4C99FDCDD /* MovePerms10.swift */; };
 		D3E8F2A1B5C7D9E0F1A3B5C7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B7C9A1D2E4F6A8B0C3D5E7F9 /* PrivacyInfo.xcprivacy */; };
+		A8D4E6F2B1C3A5D7E9F0B2C4 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E5F7A9C3B1D5E7F9A1B3C5D7 /* Assets.xcassets */; };
 		C8C35B060DBE4EBC9BBD2605 /* CubeValidator.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CubeValidator.swift; sourceTree = "<group>"; };
 		9A1B2C3D4E5F60718293A4B5 /* CubeGeometry.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CubeGeometry.swift; sourceTree = "<group>"; };
 		210F0D839B7A4FA997493A80 /* FormulaLibrary.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FormulaLibrary.swift; sourceTree = "<group>"; };
@@ -66,10 +67,12 @@
 		F66C1B4F52FD67E4C99FDCDD /* MovePerms10.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MovePerms10.swift; sourceTree = "<group>"; };
 		F1AA314053194CF3A50F8849 /* CubeAssistant.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CubeAssistant.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7C9A1D2E4F6A8B0C3D5E7F9 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		E5F7A9C3B1D5E7F9A1B3C5D7 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CC78A228DA8D425FAEC87D01 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (
 		); runOnlyForDeploymentPostprocessing = 0; };
 		E6CA440AA8A440768AFFB36B /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (
 			D3E8F2A1B5C7D9E0F1A3B5C7 /* PrivacyInfo.xcprivacy in Resources */,
+			A8D4E6F2B1C3A5D7E9F0B2C4 /* Assets.xcassets in Resources */,
 		); runOnlyForDeploymentPostprocessing = 0; };
 		F82B24C4C3174204B6FE6A12 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
 				029270DE426D45B9BC8107BB /* CubeValidator.swift in Sources */,
@@ -170,6 +173,7 @@
 			); path = Views; sourceTree = "<group>"; };
 		8839179219F04D50AF89DE3B /* Resources */ = {isa = PBXGroup; children = (
 				B7C9A1D2E4F6A8B0C3D5E7F9 /* PrivacyInfo.xcprivacy */,
+				E5F7A9C3B1D5E7F9A1B3C5D7 /* Assets.xcassets */,
 			); path = Resources; sourceTree = "<group>"; };
 		F3FDBE76D0DF46E182E8D38E /* Products */ = {isa = PBXGroup; children = (
 				F1AA314053194CF3A50F8849
@@ -318,6 +322,7 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 			}; name = Release; };
 		1286DB12D9CC4B46B46D2718 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -337,6 +342,7 @@
 				TARGETED_DEVICE_FAMILY = "1,2";
 			}; name = Debug; };
 		9843F16D2D264462A83AE15C /* Release */ = {isa = XCBuildConfiguration; buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GENERATE_ASSET_SYMBOLS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
