@@ -24,6 +24,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>用来拍下你魔方的六个面，App 会读出每块的颜色并教你一步步还原。拍的照片只在你的手机上处理，不会上传，也不会存进你的相册。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>从相册选一张魔方照片来识别颜色，仅在本机读取这张图，不会上传或修改相册。</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIRequiredDeviceCapabilities</key>

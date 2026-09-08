@@ -243,10 +243,22 @@ struct Cube3DView: UIViewRepresentable {
         ]
 
         /// 构建可见块（内芯 + 可见面 sticker）。块数 = N³-1（3 阶 → 26）。
-        func buildCube(facelets: [Int]) {
+        /// 统一拆除所有阶数的魔方节点（切阶时避免旧阶节点残留叠加渲染 / 泄漏）。
+        /// 三个 build 函数开头各调一次，确保场景里同一时刻只有一套 cube 节点。
+        func removeAllCubeNodes() {
             cubelets.values.forEach { $0.removeFromParentNode() }
             cubelets.removeAll()
-            highlightNodes.removeAll()  // 重建 cubelets 集合后高亮失效
+            cubelets2x2.values.forEach { $0.removeFromParentNode() }
+            cubelets2x2.removeAll()
+            cubeNAllNodes.forEach { $0.removeFromParentNode() }
+            cubeNAllNodes.removeAll()
+            cubeNStickers.removeAll()
+            highlightNodes.forEach { $0.value.removeFromParentNode() }
+            highlightNodes.removeAll()
+        }
+
+        func buildCube(facelets: [Int]) {
+            removeAllCubeNodes()
             let h = CubeGeometry.three.coordHalf   // 3 阶 → 1，坐标 -1...1
             for x in -h...h {
                 for y in -h...h {
@@ -385,9 +397,7 @@ struct Cube3DView: UIViewRepresentable {
 
         /// 构建 2 阶 8 角块
         func buildCube2x2(facelets: [Int]) {
-            cubelets2x2.values.forEach { $0.removeFromParentNode() }
-            cubelets2x2.removeAll()
-            highlightNodes.removeAll()  // 重建 cubelets 集合后高亮失效
+            removeAllCubeNodes()
             // 8 个角块坐标（3 阶 8 个角的 ±1 组合）
             let cornerSigns: [(Int, Int, Int)] = [
                 (-1, -1, -1), (1, -1, -1), (-1, 1, -1), (1, 1, -1),
@@ -456,12 +466,7 @@ struct Cube3DView: UIViewRepresentable {
         // 视觉上是「该面贴纸颜色即时变化」，配合 3 阶/2 阶已有的判定即可「玩起来」。
         // 优点：facelet ↔ 物理贴纸一一对应，永不与 movePerms 错位，逻辑可本地验证。
         func buildCubeN(order: Int, facelets: [Int]) {
-            // 拆除旧 N 阶节点
-            cubeNAllNodes.forEach { $0.removeFromParentNode() }
-            cubeNAllNodes.removeAll()
-            cubeNStickers.removeAll()
-            highlightNodes.forEach { $0.value.removeFromParentNode() }
-            highlightNodes.removeAll()
+            removeAllCubeNodes()
 
             let N = order
             let halfExtent = Float(N) / 2.0          // 实体核心半长

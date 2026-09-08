@@ -64,9 +64,11 @@
 		1E6196036CF6561FFF347490 /* MovePerms9.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MovePerms9.swift; sourceTree = "<group>"; };
 		F66C1B4F52FD67E4C99FDCDD /* MovePerms10.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MovePerms10.swift; sourceTree = "<group>"; };
 		F1AA314053194CF3A50F8849 /* CubeAssistant.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CubeAssistant.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B7C9A1D2E4F6A8B0C3D5E7F9 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		CC78A228DA8D425FAEC87D01 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (
 		); runOnlyForDeploymentPostprocessing = 0; };
 		E6CA440AA8A440768AFFB36B /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (
+			B7C9A1D2E4F6A8B0C3D5E7F9 /* PrivacyInfo.xcprivacy in Resources */,
 		); runOnlyForDeploymentPostprocessing = 0; };
 		F82B24C4C3174204B6FE6A12 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
 				029270DE426D45B9BC8107BB /* CubeValidator.swift in Sources */,
@@ -166,7 +168,7 @@
 				30AD0E82ED284B8FBF017D17
 			); path = Views; sourceTree = "<group>"; };
 		8839179219F04D50AF89DE3B /* Resources */ = {isa = PBXGroup; children = (
-
+				B7C9A1D2E4F6A8B0C3D5E7F9 /* PrivacyInfo.xcprivacy */,
 			); path = Resources; sourceTree = "<group>"; };
 		F3FDBE76D0DF46E182E8D38E /* Products */ = {isa = PBXGroup; children = (
 				F1AA314053194CF3A50F8849

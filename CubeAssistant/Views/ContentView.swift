@@ -2041,7 +2041,7 @@ struct MineView: View {
                     .padding(.horizontal, 40)
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
-                        ForEach(favs) { stage in
+                        ForEach(favs, id: \.idKey) { stage in
                             favoriteRow(stage)
                         }
                     }
