@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// 主界面：4-Tab 框架（主页 / 扫描 / 学习 / 我的）。
-/// 主题：深空黑底 + iOS 系统蓝 + 玻璃卡片 + SF Symbols（对标苹果官网高级感）。
+/// 主题：深空黑底 + iOS 系统蓝 + 玻璃卡片 + SF Symbols。
 ///
-/// 主页 = 3D 魔方 + 计时卡 + 打乱/重置 + 转层控件（选层 + 4 向转）。
+/// 主页 = 3D 魔方 + 计时卡（暂停/继续/完成三态） + 打乱/重置 + 转层控件（选层 + 4 向转）。
 struct ContentView: View {
     @StateObject private var session = CubeSession()
     @State private var selectedTab: Tab = .home
@@ -28,7 +28,6 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            // 深空黑渐变底
             LinearGradient(
                 colors: [Color(red: 0.04, green: 0.04, blue: 0.08),
                          Color(red: 0.01, green: 0.01, blue: 0.03)],
@@ -37,7 +36,6 @@ struct ContentView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // 内容区（切 Tab）
                 Group {
                     switch selectedTab {
                     case .home: HomeView(session: session)
@@ -48,14 +46,12 @@ struct ContentView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-                // 自定义底部 TabBar
                 tabBar
             }
         }
         .preferredColorScheme(.dark)
     }
 
-    // MARK: - 底部 TabBar
     private var tabBar: some View {
         HStack {
             ForEach(Tab.allCases, id: \.self) { tab in
@@ -82,10 +78,8 @@ struct ContentView: View {
 // MARK: - 主页
 struct HomeView: View {
     @ObservedObject var session: CubeSession
-
-    // 转层控件状态：选层 + 4 向
     @State private var selectedLayer: Layer = .top
-    @State private var showTurnControls: Bool = true
+    @State private var timingState: TimingState = .idle
 
     enum Layer: String, CaseIterable {
         case top = "顶层", middle = "中层", bottom = "底层"
@@ -98,15 +92,20 @@ struct HomeView: View {
         }
     }
 
+    /// 计时三态：未开始 → 进行中 → 暂停
+    enum TimingState: Equatable {
+        case idle        // 未开始
+        case running     // 进行中
+        case paused      // 已暂停（用户点击想结束 / 完成复原）
+    }
+
     var body: some View {
-        VStack(spacing: 16) {
-            // 标题
+        VStack(spacing: 0) {
             HStack {
                 Text("魔方学院")
                     .font(.title2.weight(.bold))
                     .foregroundColor(.white)
                 Spacer()
-                // 身份切换（物理/虚拟）
                 Button {
                     session.setIdentity(session.identity == .physical ? .virtual : .physical)
                 } label: {
@@ -121,19 +120,17 @@ struct HomeView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
+            .padding(.bottom, 12)
 
             ScrollView {
-                VStack(spacing: 16) {
-                    // 计时卡
+                VStack(spacing: 14) {
                     timingCard
 
-                    // 3D 魔方
                     Cube3DView(session: session)
-                        .frame(height: 300)
+                        .frame(height: 280)
                         .clipShape(RoundedRectangle(cornerRadius: 24))
                         .shadow(color: .black.opacity(0.4), radius: 20, x: 0, y: 10)
 
-                    // 提示信息
                     if let msg = session.message {
                         Text(msg)
                             .font(.subheadline)
@@ -142,74 +139,135 @@ struct HomeView: View {
                             .padding(.horizontal, 20)
                     }
 
-                    // 转层控件（选层 + 4 向转）
                     turnControls
-
-                    // 打乱 / 重置 / 求解
                     actionRow
                 }
-                .padding(.bottom, 16)
-            }
-        }
-        .onAppear {
-            // 首次进入若未打乱，提示
-            if session.undoCount == 0 && session.isSolved {
-                // 静默，等用户操作
+                .padding(.bottom, 20)
             }
         }
     }
 
-    // MARK: 计时卡
+    // MARK: 计时卡（三态）
     private var timingCard: some View {
-        HStack(spacing: 24) {
-            VStack(spacing: 4) {
-                Text(Self.formatTime(session.isTiming ? session.liveElapsed : 0))
-                    .font(.system(size: 42, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundColor(.white)
-                Text(session.isTiming ? "进行中" : "本次用时")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.5))
+        VStack(spacing: 12) {
+            HStack(spacing: 16) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Self.formatTime(displayedElapsed))
+                        .font(.system(size: 32, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                    Text(timingStateLabel)
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.55))
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(session.history.first.map { Self.formatTime($0.duration) } ?? "—")
+                        .font(.system(size: 20, weight: .medium, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                    Text("最近")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.55))
+                }
             }
-            Divider().frame(height: 44).overlay(Color.white.opacity(0.12))
-            VStack(spacing: 4) {
-                Text(session.history.first.map { Self.formatTime($0.duration) } ?? "—")
-                    .font(.system(size: 24, weight: .medium, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundColor(.white)
-                Text("最近")
-                    .font(.caption)
-                    .foregroundColor(.white.opacity(0.5))
-            }
+
+            // 主操作按钮（随状态切换文案）
+            timingPrimaryButton
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 18)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 20)
                 .fill(.ultraThinMaterial)
                 .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.08), lineWidth: 1))
         )
         .padding(.horizontal, 20)
-        // 点计时卡切换计时启停
-        .onTapGesture {
-            if session.isTiming {
-                if session.identity == .virtual && session.isSolved {
-                    // 虚拟已还原，自动结算（apply 已处理），这里仅手动停表兜底
-                    _ = session.stopTiming()
-                } else {
-                    session.finishManualSolve()
-                }
-            } else {
+    }
+
+    /// 主操作按钮的文案与动作：未开始→开始 / 进行中→暂停 / 暂停→继续
+    @ViewBuilder
+    private var timingPrimaryButton: some View {
+        switch timingState {
+        case .idle:
+            Button {
+                timingState = .running
                 session.startTiming()
+            } label: {
+                Label("开始", systemImage: "play.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
             }
+            .buttonStyle(.plain)
+        case .running:
+            Button {
+                timingState = .paused
+            } label: {
+                Label("暂停", systemImage: "pause.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(Color.white.opacity(0.18)))
+            }
+            .buttonStyle(.plain)
+        case .paused:
+            HStack(spacing: 8) {
+                Button {
+                    timingState = .running
+                    // 继续：从最近 elapsed 重新启动计时器（用当前暂停时刻重启）
+                    session.startTiming()
+                } label: {
+                    Label("继续", systemImage: "play.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
+                }
+                .buttonStyle(.plain)
+                Button {
+                    session.finishManualSolve()
+                    timingState = .idle
+                } label: {
+                    Label("完成", systemImage: "checkmark")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Capsule().fill(Color.green.opacity(0.55)))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    /// 显示的计时（进行中 → live；其他 → 0）
+    private var displayedElapsed: TimeInterval {
+        switch timingState {
+        case .running: return session.liveElapsed
+        case .paused:  return session.liveElapsed
+        case .idle:    return 0
+        }
+    }
+
+    private var timingStateLabel: String {
+        switch timingState {
+        case .idle:    return session.history.isEmpty ? "本次用时" : "上次成绩已记录"
+        case .running: return "进行中…点击暂停"
+        case .paused:  return "已暂停 · 继续或完成"
         }
     }
 
     // MARK: 转层控件
     private var turnControls: some View {
-        VStack(spacing: 12) {
-            // 选层
+        VStack(spacing: 10) {
             HStack(spacing: 10) {
                 ForEach(Layer.allCases, id: \.self) { layer in
                     Button {
@@ -224,11 +282,11 @@ struct HomeView: View {
                                 Capsule().fill(selectedLayer == layer ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.white.opacity(0.06))
                             )
                     }
+                    .buttonStyle(.plain)
                 }
             }
 
-            // 4 向转（横转左右 / 竖转上下）
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 turnButton("向左横转", "arrow.left") { applyMove(.horizontalLeft) }
                 turnButton("向右横转", "arrow.right") { applyMove(.horizontalRight) }
                 turnButton("向上竖转", "arrow.up") { applyMove(.verticalUp) }
@@ -240,24 +298,27 @@ struct HomeView: View {
 
     private func turnButton(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 4) {
+            VStack(spacing: 3) {
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .semibold))
                 Text(title)
                     .font(.caption2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())   // 扩大点击区
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(.ultraThinMaterial)
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.1), lineWidth: 1))
             )
         }
+        .buttonStyle(.plain)
     }
 
-    // MARK: 打乱 / 重置 / 求解
     private var actionRow: some View {
         HStack(spacing: 10) {
             Button { session.scramble() } label: {
@@ -266,31 +327,38 @@ struct HomeView: View {
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
+                    .contentShape(Rectangle())
                     .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
             }
+            .buttonStyle(.plain)
+
             Button { session.undo() } label: {
                 Image(systemName: "arrow.uturn.backward")
                     .font(.subheadline.weight(.medium))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
+                    .contentShape(Rectangle())
                     .background(Capsule().fill(.ultraThinMaterial))
             }
+            .buttonStyle(.plain)
             .disabled(!session.canUndo)
             .opacity(session.canUndo ? 1.0 : 0.35)
+
             Button { session.reset() } label: {
                 Image(systemName: "arrow.counterclockwise")
                     .font(.subheadline.weight(.medium))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
+                    .contentShape(Rectangle())
                     .background(Capsule().fill(.ultraThinMaterial))
             }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 20)
     }
 
-    // MARK: 选层 + 方向 → Move 映射
     private func applyMove(_ dir: TurnDirection) {
         let move: Move = resolveMove(layer: selectedLayer, direction: dir)
         _ = session.apply(move)
@@ -300,26 +368,22 @@ struct HomeView: View {
         case horizontalLeft, horizontalRight, verticalUp, verticalDown
     }
 
-    /// 把「层 + 方向」映射为标准 Move。
-    /// 约定：面向 F 面（绿面朝前）时：
-    /// - 顶层横转 = U / U'，中层横转 = E 层（用两次 U 近似，或跳过，v1 简化为 U 系列）
-    /// - 底层横转 = D / D'
-    /// - 竖转 = R / R'（左右层）或 F / F'（前层）
-    /// v1.0 简化为：顶层=U，底层=D，中层=M（用 U+D 组合近似，此处用 U2 占位后展开）
+    /// 选层 + 方向 → 标准 Move。
+    /// 横转=顶层/中层/底层水平转(U/U'，中层用U2)，竖转=前后竖转(F/F')
     private func resolveMove(layer: Layer, direction: TurnDirection) -> Move {
         switch (layer, direction) {
-        case (.top, .horizontalLeft): return .U
-        case (.top, .horizontalRight): return .Up
-        case (.top, .verticalUp): return .F
-        case (.top, .verticalDown): return .Fp
+        case (.top, .horizontalLeft):    return .U
+        case (.top, .horizontalRight):   return .Up
+        case (.top, .verticalUp):       return .F
+        case (.top, .verticalDown):     return .Fp
         case (.middle, .horizontalLeft): return .U2
-        case (.middle, .horizontalRight): return .U2
-        case (.middle, .verticalUp): return .F
-        case (.middle, .verticalDown): return .Fp
+        case (.middle, .horizontalRight):return .U2
+        case (.middle, .verticalUp):    return .F
+        case (.middle, .verticalDown):  return .Fp
         case (.bottom, .horizontalLeft): return .D
-        case (.bottom, .horizontalRight): return .Dp
-        case (.bottom, .verticalUp): return .F
-        case (.bottom, .verticalDown): return .Fp
+        case (.bottom, .horizontalRight):return .Dp
+        case (.bottom, .verticalUp):    return .F
+        case (.bottom, .verticalDown):  return .Fp
         }
     }
 
@@ -331,7 +395,7 @@ struct HomeView: View {
     }
 }
 
-// MARK: - 学习页（还原指引占位）
+// MARK: - 学习页
 struct LearnView: View {
     @ObservedObject var session: CubeSession
 
@@ -390,6 +454,7 @@ struct LearnView: View {
                     .padding(.vertical, 12)
                     .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
             }
+            .buttonStyle(.plain)
             .disabled(session.isSolving)
             .padding(.horizontal, 20)
             .padding(.bottom, 16)
@@ -398,7 +463,7 @@ struct LearnView: View {
     }
 }
 
-// MARK: - 我的页（历史成绩占位）
+// MARK: - 我的页
 struct MineView: View {
     @ObservedObject var session: CubeSession
 
