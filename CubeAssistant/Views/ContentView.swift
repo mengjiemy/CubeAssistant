@@ -6,9 +6,9 @@ import UniformTypeIdentifiers
 /// 深空黑底 + 系统蓝强调（对应原型「深空黑玻璃」风格基准）。
 enum AppTheme {
     /// 主强调蓝（品牌交互色）
-    static let accent = AppTheme.accent
+    static let accent = Color(red: 0.04, green: 0.52, blue: 1.0)
     /// 亮蓝（渐变/次级强调）
-    static let accentLight = AppTheme.accentLight
+    static let accentLight = Color(red: 0.4, green: 0.7, blue: 1.0)
     /// 深空黑底渐变（两档）
     static let bgTop = Color(red: 0.04, green: 0.04, blue: 0.08)
     static let bgBottom = Color(red: 0.01, green: 0.01, blue: 0.03)
