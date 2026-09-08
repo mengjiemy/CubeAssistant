@@ -16,12 +16,40 @@ import Foundation
 /// 原本定义在 CubeSession.swift，因 BackupStore（纯逻辑）需引用它，
 /// 且 SolveRecord 本身是纯数据模型，遂迁至本文件（数据模型同层），
 /// 消除纯逻辑层对 SwiftUI 依赖文件的反向引用。
+///
+/// 字段说明：
+/// - `order`：本次还原的魔方阶数（3 阶 / 2 阶…）。为多阶统计铺路。
+///   新增于 v15，默认 3；通过自定义 Codable 用 `decodeIfPresent` 兜底，
+///   保证「老版本（无 order 字段）的记录」仍能正常反序列化、补默认值 3。
 struct SolveRecord: Identifiable, Codable, Equatable {
     let id: String
     let duration: TimeInterval
     let moves: Int
     let scramble: String
     let date: Date
+    /// 魔方阶数（默认 3）。老数据缺省 → 补 3。
+    var order: Int
+
+    /// 正常构造路径（新成绩）。
+    init(id: String, duration: TimeInterval, moves: Int, scramble: String, date: Date, order: Int = 3) {
+        self.id = id
+        self.duration = duration
+        self.moves = moves
+        self.scramble = scramble
+        self.date = date
+        self.order = order
+    }
+
+    /// 解码：老 JSON 无 `order` 字段时补默认 3，保证向后兼容不抛错。
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        duration = try c.decode(TimeInterval.self, forKey: .duration)
+        moves = try c.decode(Int.self, forKey: .moves)
+        scramble = try c.decode(String.self, forKey: .scramble)
+        date = try c.decode(Date.self, forKey: .date)
+        order = try c.decodeIfPresent(Int.self, forKey: .order) ?? 3
+    }
 }
 
 /// 备份数据顶层结构（写入 JSON 的内容）。

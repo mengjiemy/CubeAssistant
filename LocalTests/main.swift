@@ -248,5 +248,19 @@ if let fd = futureJSON.data(using: .utf8) {
     }
 }
 
+// ---- SolveRecord.order（v15 多阶字段）----
+check(rec1.order == 3, "新记录默认 order=3")
+// 带 order=2 的记录 roundtrip
+let rec2x2 = SolveRecord(id: "r2x", duration: 8.8, moves: 20, scramble: "-", date: Date(timeIntervalSince1970: 3000), order: 2)
+let b2 = BackupData(records: [rec2x2], nickname: "n", signature: "s", guideTier: .beginner)
+if let j2 = BackupManager.encode(b2), case .success(let r2) = BackupManager.decode(j2) {
+    check(r2.records[0].order == 2, "order=2 roundtrip")
+} else { check(false, "order=2 备份编解码失败") }
+// 老版本 JSON（无 order 字段）解码应补默认 3，不抛错
+let legacyJSON = "{\"schemaVersion\":1,\"exportedAt\":\"2026-09-08T10:00:00Z\",\"records\":[{\"id\":\"old1\",\"duration\":9.9,\"moves\":22,\"scramble\":\"-\",\"date\":\"2026-09-08T10:00:00Z\"}],\"nickname\":\"n\",\"signature\":\"s\",\"guideTier\":\"chinese\"}"
+if let ld = legacyJSON.data(using: .utf8), case .success(let rl) = BackupManager.decode(ld) {
+    check(rl.records[0].order == 3, "老记录(无order)解码补默认 3")
+} else { check(false, "老版本无 order JSON 应能解码") }
+
 print("\n========== 结果：\(passed) 通过 / \(failed) 失败 ==========")
 if failed > 0 { exit(1) } else { print("✅ 全部通过") }

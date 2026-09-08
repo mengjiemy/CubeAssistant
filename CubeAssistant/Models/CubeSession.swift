@@ -217,7 +217,8 @@ final class CubeSession: NSObject, ObservableObject {
                                  duration: d,
                                  moves: undoCount,
                                  scramble: "-",
-                                 date: Date())
+                                 date: Date(),
+                                 order: model.order)
         history.insert(record, at: 0)
         saveHistoryToDefaults()
         message = "复原！用时 \(Self.format(d))"
@@ -231,7 +232,8 @@ final class CubeSession: NSObject, ObservableObject {
                                  duration: d,
                                  moves: undoCount,
                                  scramble: "-",
-                                 date: Date())
+                                 date: Date(),
+                                 order: model.order)
         history.insert(record, at: 0)
         saveHistoryToDefaults()
         message = "🎉 复原！用时 \(Self.format(d))"
