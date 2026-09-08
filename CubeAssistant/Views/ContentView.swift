@@ -133,7 +133,7 @@ struct HomeView: View {
                     turnControls
                     actionRow
                 }
-                .padding(.bottom, 20)
+                .padding(.bottom, 40)
             }
         }
     }
@@ -262,14 +262,9 @@ struct HomeView: View {
     // MARK: 转层控件（选面 + 顺/逆时针，方向固定正确）
     private var turnControls: some View {
         VStack(spacing: 10) {
-            // 6 面选层（选中蓝框高亮）
-            HStack(spacing: 8) {
-                ForEach([Face.U, Face.R, Face.F], id: \.self) { f in
-                    faceButton(f)
-                }
-            }
-            HStack(spacing: 8) {
-                ForEach([Face.D, Face.L, Face.B], id: \.self) { f in
+            // 6 面选层（选中蓝框高亮），顺序「上下左右前后」，一排放下
+            HStack(spacing: 6) {
+                ForEach([Face.U, Face.D, Face.L, Face.R, Face.F, Face.B], id: \.self) { f in
                     faceButton(f)
                 }
             }
@@ -292,7 +287,7 @@ struct HomeView: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundColor(selected ? .white : .white.opacity(0.6))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+                .padding(.vertical, 9)
                 .background(
                     Capsule().fill(selected ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.white.opacity(0.06))
                 )
@@ -305,12 +300,12 @@ struct HomeView: View {
 
     private func faceLabel(_ f: Face) -> String {
         switch f {
-        case .U: return "上 U"
-        case .D: return "下 D"
-        case .L: return "左 L"
-        case .R: return "右 R"
-        case .F: return "前 F"
-        case .B: return "后 B"
+        case .U: return "上"
+        case .D: return "下"
+        case .L: return "左"
+        case .R: return "右"
+        case .F: return "前"
+        case .B: return "后"
         }
     }
 
@@ -326,7 +321,7 @@ struct HomeView: View {
             }
             .foregroundColor(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, 10)
             .contentShape(Rectangle())   // 扩大点击区
             .background(
                 RoundedRectangle(cornerRadius: 12)
