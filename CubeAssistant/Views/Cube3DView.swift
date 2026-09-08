@@ -5,8 +5,8 @@ import SceneKit
 /// 3D 魔方视图（SceneKit）—— 状态驱动渲染。
 ///
 /// 渲染方式：每个 cubelet 是 1 个 SCNBox，6 个 material 顺序固定为
-/// [+x, -x, +y, -y, +z, -z]（与 SCNBox 内部一致），按 facelet 给对应面赋色。
-/// chamferRadius 设小（0.04）保留圆角立体感但避免 material 索引错乱。
+/// [+z, +x, -z, -x, +y, -y]（与 SCNBox 内部一致），按 facelet 给对应面赋色。
+/// chamferRadius 设小（0.04）保留圆角立体感。
 ///
 /// 视角控制：直接用 SCNView 内置 `allowsCameraControl = true`（自带单指 pan
 /// 旋转视角、双指捏合缩放），避免自定义手势穿透到 ScrollView 的问题。
@@ -109,7 +109,7 @@ struct Cube3DView: UIViewRepresentable {
             applyFacelets(facelets)
         }
 
-        /// SCNBox 6-materials 顺序：0=+x, 1=-x, 2=+y, 3=-y, 4=+z, 5=-z
+        /// SCNBox 6-materials 顺序：0=+z, 1=+x, 2=-z, 3=-x, 4=+y, 5=-y
         func makeCubelet(x: Int, y: Int, z: Int) -> SCNNode {
             // 关键：chamferRadius 0.04 保留圆角立体感，但小到不触发 material 索引错乱
             let geo = SCNBox(width: 0.96, height: 0.96, length: 0.96, chamferRadius: 0.04)
@@ -172,14 +172,14 @@ struct Cube3DView: UIViewRepresentable {
                 (1, -1, -1), (0, -1, -1), (-1, -1, -1),
             ]
 
-            // (x,y,z) → SCNBox material index（0=+x, 1=-x, 2=+y, 3=-y, 4=+z, 5=-z）
+            // (x,y,z) → SCNBox material index（0=+z, 1=+x, 2=-z, 3=-x, 4=+y, 5=-y）
             func matIndex(x: Int, y: Int, z: Int) -> Int {
-                if x ==  1 { return 0 }
-                if x == -1 { return 1 }
-                if y ==  1 { return 2 }
-                if y == -1 { return 3 }
-                if z ==  1 { return 4 }
-                return 5  // z == -1
+                if z ==  1 { return 0 }  // Front
+                if x ==  1 { return 1 }  // Right
+                if z == -1 { return 2 }  // Back
+                if x == -1 { return 3 }  // Left
+                if y ==  1 { return 4 }  // Top
+                return 5               // Bottom
             }
 
             for (idx, colorId) in facelets.enumerated() {
