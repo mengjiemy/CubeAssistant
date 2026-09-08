@@ -34,6 +34,7 @@
 		459095243CD242BD4A62B86E /* MovePerms8.swift in Sources */ = {isa = PBXBuildFile; fileRef = B523903FBE9F1416E04483E2 /* MovePerms8.swift */; };
 		7AFE882B90DE239E8A7EDE74 /* MovePerms9.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E6196036CF6561FFF347490 /* MovePerms9.swift */; };
 		38ED0FB61693EC2070418197 /* MovePerms10.swift in Sources */ = {isa = PBXBuildFile; fileRef = F66C1B4F52FD67E4C99FDCDD /* MovePerms10.swift */; };
+		D3E8F2A1B5C7D9E0F1A3B5C7 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = B7C9A1D2E4F6A8B0C3D5E7F9 /* PrivacyInfo.xcprivacy */; };
 		C8C35B060DBE4EBC9BBD2605 /* CubeValidator.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CubeValidator.swift; sourceTree = "<group>"; };
 		9A1B2C3D4E5F60718293A4B5 /* CubeGeometry.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CubeGeometry.swift; sourceTree = "<group>"; };
 		210F0D839B7A4FA997493A80 /* FormulaLibrary.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FormulaLibrary.swift; sourceTree = "<group>"; };
@@ -68,7 +69,7 @@
 		CC78A228DA8D425FAEC87D01 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (
 		); runOnlyForDeploymentPostprocessing = 0; };
 		E6CA440AA8A440768AFFB36B /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (
-			B7C9A1D2E4F6A8B0C3D5E7F9 /* PrivacyInfo.xcprivacy in Resources */,
+			D3E8F2A1B5C7D9E0F1A3B5C7 /* PrivacyInfo.xcprivacy in Resources */,
 		); runOnlyForDeploymentPostprocessing = 0; };
 		F82B24C4C3174204B6FE6A12 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
 				029270DE426D45B9BC8107BB /* CubeValidator.swift in Sources */,
