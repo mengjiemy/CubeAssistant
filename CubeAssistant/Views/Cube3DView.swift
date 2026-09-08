@@ -4,9 +4,9 @@ import SceneKit
 
 /// 3D 魔方视图（SceneKit）—— 状态驱动渲染。
 ///
-/// 渲染方式：每个 cubelet 是 1 个黑色 SCNBox（占位几何）+ 最多 6 个 SCNPlane
-/// 子节点（贴在外侧六面上，颜色按 facelet 决定）。这种"盒子+贴片"模式完全绕开
-/// 了 SCNBox 的 6-materials 索引歧义（chamferRadius 会让圆角面 material 错乱）。
+/// 渲染方式：每个 cubelet 是 1 个 SCNBox，6 个 material 顺序固定为
+/// [+x, -x, +y, -y, +z, -z]（与 SCNBox 内部一致），按 facelet 给对应面赋色。
+/// chamferRadius 设小（0.04）保留圆角立体感但避免 material 索引错乱。
 ///
 /// 视角控制：直接用 SCNView 内置 `allowsCameraControl = true`（自带单指 pan
 /// 旋转视角、双指捏合缩放），避免自定义手势穿透到 ScrollView 的问题。
@@ -30,7 +30,7 @@ struct Cube3DView: UIViewRepresentable {
         context.coordinator.buildCube(facelets: session.cube.facelets)
         context.coordinator.lastFacelets = session.cube.facelets
 
-        // 摄像机（被 allowsCameraControl 自动接管，但保留初始位置）
+        // 摄像机
         let camera = SCNNode()
         camera.camera = SCNCamera()
         camera.camera?.fieldOfView = 38
@@ -39,7 +39,7 @@ struct Cube3DView: UIViewRepresentable {
         scene.rootNode.addChildNode(camera)
         context.coordinator.cameraNode = camera
 
-        // 光照：环境光 + 定向光
+        // 光照：环境光 + 定向光（产生立体感）
         let ambient = SCNNode()
         ambient.light = SCNLight()
         ambient.light!.type = .ambient
@@ -77,25 +77,26 @@ struct Cube3DView: UIViewRepresentable {
         weak var cameraNode: SCNNode?
         /// cubelets[key] = 块节点；key 格式 "x_y_z"
         var cubelets: [String: SCNNode] = [:]
-        /// 块节点上的贴片子节点，按面方向索引（"px"/"nx"/"py"/"ny"/"pz"/"nz"）
-        var stickers: [String: [String: SCNNode]] = [:]
+        /// 块节点 → 该块 6 个外露面在 materials 数组里的下标
+        var exposedFaces: [String: [Int]] = [:]
         var lastFacelets: [Int] = []
 
-        /// 标准魔方配色（stickerless）
+        /// 标准魔方配色（stickerless，与 facelet 颜色 id 严格对应）
         let colorMap: [UIColor] = [
-            UIColor(red: 0.95, green: 0.95, blue: 0.95, alpha: 1), // 0 U 白
-            UIColor(red: 0.86, green: 0.18, blue: 0.18, alpha: 1), // 1 R 红
-            UIColor(red: 0.15, green: 0.62, blue: 0.30, alpha: 1), // 2 F 绿
-            UIColor(red: 0.97, green: 0.82, blue: 0.12, alpha: 1), // 3 D 黄
+            UIColor(red: 0.97, green: 0.97, blue: 0.97, alpha: 1), // 0 U 白
+            UIColor(red: 0.88, green: 0.18, blue: 0.18, alpha: 1), // 1 R 红
+            UIColor(red: 0.18, green: 0.62, blue: 0.30, alpha: 1), // 2 F 绿
+            UIColor(red: 0.97, green: 0.82, blue: 0.15, alpha: 1), // 3 D 黄
             UIColor(red: 0.97, green: 0.55, blue: 0.12, alpha: 1), // 4 L 橙
-            UIColor(red: 0.12, green: 0.36, blue: 0.78, alpha: 1), // 5 B 蓝
+            UIColor(red: 0.15, green: 0.36, blue: 0.78, alpha: 1), // 5 B 蓝
         ]
+        let innerColor = UIColor(red: 0.04, green: 0.04, blue: 0.06, alpha: 1)
 
-        /// 构建 26 个块（盒子+贴片）
+        /// 构建 26 个块（SCNBox 6-materials 方案）
         func buildCube(facelets: [Int]) {
             cubelets.values.forEach { $0.removeFromParentNode() }
             cubelets.removeAll()
-            stickers.removeAll()
+            exposedFaces.removeAll()
             for x in -1...1 {
                 for y in -1...1 {
                     for z in -1...1 {
@@ -111,116 +112,120 @@ struct Cube3DView: UIViewRepresentable {
             applyFacelets(facelets)
         }
 
+        /// SCNBox 6-materials 顺序：0=+x, 1=-x, 2=+y, 3=-y, 4=+z, 5=-z
         func makeCubelet(x: Int, y: Int, z: Int) -> SCNNode {
-            // 黑色盒子作为占位几何 + 边缘
-            let boxGeo = SCNBox(width: 0.92, height: 0.92, length: 0.92, chamferRadius: 0.04)
-            let blackMat = SCNMaterial()
-            blackMat.diffuse.contents = UIColor(red: 0.05, green: 0.05, blue: 0.07, alpha: 1)
-            blackMat.lightingModel = .physicallyBased
-            blackMat.roughness.contents = 0.5
-            boxGeo.materials = [blackMat, blackMat, blackMat, blackMat, blackMat, blackMat]
-            let node = SCNNode(geometry: boxGeo)
+            // 关键：chamferRadius 0.04 保留圆角立体感，但小到不触发 material 索引错乱
+            let geo = SCNBox(width: 0.96, height: 0.96, length: 0.96, chamferRadius: 0.04)
+
+            // 先 6 个 material 全置内色（黑），再由 applyFacelets 覆盖可见面
+            var mats: [SCNMaterial] = []
+            for _ in 0..<6 {
+                let m = SCNMaterial()
+                m.diffuse.contents = innerColor
+                m.lightingModel = .physicallyBased
+                m.roughness.contents = 0.35
+                m.metalness.contents = 0.0
+                mats.append(m)
+            }
+            geo.materials = mats
+
+            let node = SCNNode(geometry: geo)
+            node.castsShadow = true
             node.name = "cubelet_\(x)_\(y)_\(z)"
 
-            // 在每个外露面上贴一张 SCNPlane（带颜色的贴片）
-            let stickerGeo = SCNPlane(width: 0.84, height: 0.84)
-            let initialColor = UIColor(red: 0.05, green: 0.05, blue: 0.07, alpha: 1)
-            stickerGeo.firstMaterial?.diffuse.contents = initialColor
-            stickerGeo.firstMaterial?.lightingModel = .physicallyBased
-            stickerGeo.firstMaterial?.roughness.contents = 0.3
+            // 记录该块哪些面是外露的（在 materials 数组里的下标）
+            var exposed: [Int] = []
+            if x == 1  { exposed.append(0) }  // +x
+            if x == -1 { exposed.append(1) }  // -x
+            if y == 1  { exposed.append(2) }  // +y
+            if y == -1 { exposed.append(3) }  // -y
+            if z == 1  { exposed.append(4) }  // +z
+            if z == -1 { exposed.append(5) }  // -z
+            exposedFaces["\(x)_\(y)_\(z)"] = exposed
 
-            var map: [String: SCNNode] = [:]
-            let s = 0.46  // 贴片中心偏移（盒子边长 0.92 的一半）
-
-            // +x 面（仅当 x == 1 才露）
-            if x == 1 {
-                let n = SCNNode(geometry: stickerGeo.copy() as! SCNGeometry)
-                n.position = SCNVector3(s, 0, 0)
-                n.eulerAngles = SCNVector3(0, Float.pi / 2, 0)
-                node.addChildNode(n)
-                map["px"] = n
-            }
-            // -x 面
-            if x == -1 {
-                let n = SCNNode(geometry: stickerGeo.copy() as! SCNGeometry)
-                n.position = SCNVector3(-s, 0, 0)
-                n.eulerAngles = SCNVector3(0, -Float.pi / 2, 0)
-                node.addChildNode(n)
-                map["nx"] = n
-            }
-            // +y 面
-            if y == 1 {
-                let n = SCNNode(geometry: stickerGeo.copy() as! SCNGeometry)
-                n.position = SCNVector3(0, s, 0)
-                n.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
-                node.addChildNode(n)
-                map["py"] = n
-            }
-            // -y 面
-            if y == -1 {
-                let n = SCNNode(geometry: stickerGeo.copy() as! SCNGeometry)
-                n.position = SCNVector3(0, -s, 0)
-                n.eulerAngles = SCNVector3(Float.pi / 2, 0, 0)
-                node.addChildNode(n)
-                map["ny"] = n
-            }
-            // +z 面
-            if z == 1 {
-                let n = SCNNode(geometry: stickerGeo.copy() as! SCNGeometry)
-                n.position = SCNVector3(0, 0, s)
-                node.addChildNode(n)
-                map["pz"] = n
-            }
-            // -z 面
-            if z == -1 {
-                let n = SCNNode(geometry: stickerGeo.copy() as! SCNGeometry)
-                n.position = SCNVector3(0, 0, -s)
-                n.eulerAngles = SCNVector3(0, Float.pi, 0)
-                node.addChildNode(n)
-                map["nz"] = n
-            }
-
-            stickers["\(x)_\(y)_\(z)"] = map
             return node
         }
 
-        /// 根据 facelets 给每个贴片赋色
+        /// 根据 facelets 给每个块可见面贴对应颜色。
+        ///
+        /// facelet 索引约定（CubeState 标准）：
+        /// - U(0-8), R(9-17), F(18-26), D(27-35), L(36-44), B(45-53)
+        /// - 每个面 9 贴片 row-major：行 0 在 z=-1 一侧，行 2 在 z=+1 一侧
+        /// - 每行：列 0 在 x=-1，列 2 在 x=+1
+        ///
+        /// CubeState 的 U/D 面是从 +y 俯视，F 面是从 +z 看（x 左到右、y 上到下），
+        /// L 面是从 -x 看（z 远到近、y 上到下），R 面从 +x 看（z 近到远、y 上到下），
+        /// B 面从 -z 看（x 右到左、y 上到下）。
         func applyFacelets(_ facelets: [Int]) {
             guard facelets.count == 54 else { return }
-            // facelet 索引 → (块坐标, 块上的面方向 key)
-            let faceMap: [(Int, Int, Int, String)] = [
-                // U 面 (0-8)：y=1，row-major，row 按 z 从 -1 到 +1
-                (-1, 1, 1, "py"), (0, 1, 1, "py"), (1, 1, 1, "py"),
-                (-1, 1, 0, "py"), (0, 1, 0, "py"), (1, 1, 0, "py"),
-                (-1, 1, -1, "py"), (0, 1, -1, "py"), (1, 1, -1, "py"),
-                // R 面 (9-17)：x=1，row-major，row 按 y 从 +1 到 -1，col 按 z 从 +1 到 -1
-                (1, 1, 1, "px"), (1, 1, 0, "px"), (1, 1, -1, "px"),
-                (1, 0, 1, "px"), (1, 0, 0, "px"), (1, 0, -1, "px"),
-                (1, -1, 1, "px"), (1, -1, 0, "px"), (1, -1, -1, "px"),
-                // F 面 (18-26)：z=1
-                (-1, 1, 1, "pz"), (0, 1, 1, "pz"), (1, 1, 1, "pz"),
-                (-1, 0, 1, "pz"), (0, 0, 1, "pz"), (1, 0, 1, "pz"),
-                (-1, -1, 1, "pz"), (0, -1, 1, "pz"), (1, -1, 1, "pz"),
-                // D 面 (27-35)：y=-1
-                (-1, -1, -1, "ny"), (0, -1, -1, "ny"), (1, -1, -1, "ny"),
-                (-1, -1, 0, "ny"), (0, -1, 0, "ny"), (1, -1, 0, "ny"),
-                (-1, -1, 1, "ny"), (0, -1, 1, "ny"), (1, -1, 1, "ny"),
-                // L 面 (36-44)：x=-1
-                (-1, 1, -1, "nx"), (-1, 1, 0, "nx"), (-1, 1, 1, "nx"),
-                (-1, 0, -1, "nx"), (-1, 0, 0, "nx"), (-1, 0, 1, "nx"),
-                (-1, -1, -1, "nx"), (-1, -1, 0, "nx"), (-1, -1, 1, "nx"),
-                // B 面 (45-53)：z=-1
-                (1, 1, -1, "nz"), (0, 1, -1, "nz"), (-1, 1, -1, "nz"),
-                (1, 0, -1, "nz"), (0, 0, -1, "nz"), (-1, 0, -1, "nz"),
-                (1, -1, -1, "nz"), (0, -1, -1, "nz"), (-1, -1, -1, "nz"),
+            // (x, y, z) → 该面在 SCNBox materials 数组里的下标
+            func matIndex(x: Int, y: Int, z: Int) -> Int? {
+                if x ==  1 { return 0 }
+                if x == -1 { return 1 }
+                if y ==  1 { return 2 }
+                if y == -1 { return 3 }
+                if z ==  1 { return 4 }
+                if z == -1 { return 5 }
+                return nil
+            }
+
+            // facelet 索引 → (块坐标 x,y,z)
+            // U 面 (0-8)：y=1，9 块在 xz 平面上
+            //   观察方向：从 +y 俯视，row 按 z 从 -1 到 +1，col 按 x 从 -1 到 +1
+            let uPositions: [(Int,Int,Int)] = [
+                (-1, 1, -1), (0, 1, -1), (1, 1, -1),
+                (-1, 1,  0), (0, 1,  0), (1, 1,  0),
+                (-1, 1,  1), (0, 1,  1), (1, 1,  1),
             ]
-            for (idx, colorId) in facelets.enumerated() {
-                guard idx < faceMap.count else { break }
-                let (x, y, z, face) = faceMap[idx]
-                guard colorId >= 0 && colorId < colorMap.count else { continue }
-                let key = "\(x)_\(y)_\(z)"
-                guard let map = stickers[key], let node = map[face] else { continue }
-                node.geometry?.firstMaterial?.diffuse.contents = colorMap[colorId]
+            // R 面 (9-17)：x=1，9 块在 yz 平面上
+            //   观察方向：从 +x 看，row 按 y 从 +1 到 -1，col 按 z 从 +1 到 -1
+            let rPositions: [(Int,Int,Int)] = [
+                (1,  1,  1), (1,  1,  0), (1,  1, -1),
+                (1,  0,  1), (1,  0,  0), (1,  0, -1),
+                (1, -1,  1), (1, -1,  0), (1, -1, -1),
+            ]
+            // F 面 (18-26)：z=1
+            //   观察方向：从 +z 看，row 按 y 从 +1 到 -1，col 按 x 从 -1 到 +1
+            let fPositions: [(Int,Int,Int)] = [
+                (-1,  1, 1), (0,  1, 1), (1,  1, 1),
+                (-1,  0, 1), (0,  0, 1), (1,  0, 1),
+                (-1, -1, 1), (0, -1, 1), (1, -1, 1),
+            ]
+            // D 面 (27-35)：y=-1
+            //   观察方向：从 -y 仰视，row 按 z 从 +1 到 -1，col 按 x 从 -1 到 +1
+            //   (因为翻到下底面看，row 反转)
+            let dPositions: [(Int,Int,Int)] = [
+                (-1, -1,  1), (0, -1,  1), (1, -1,  1),
+                (-1, -1,  0), (0, -1,  0), (1, -1,  0),
+                (-1, -1, -1), (0, -1, -1), (1, -1, -1),
+            ]
+            // L 面 (36-44)：x=-1
+            //   观察方向：从 -x 看，row 按 y 从 +1 到 -1，col 按 z 从 -1 到 +1
+            let lPositions: [(Int,Int,Int)] = [
+                (-1,  1, -1), (-1,  1,  0), (-1,  1,  1),
+                (-1,  0, -1), (-1,  0,  0), (-1,  0,  1),
+                (-1, -1, -1), (-1, -1,  0), (-1, -1,  1),
+            ]
+            // B 面 (45-53)：z=-1
+            //   观察方向：从 -z 看，row 按 y 从 +1 到 -1，col 按 x 从 +1 到 -1
+            let bPositions: [(Int,Int,Int)] = [
+                ( 1,  1, -1), ( 0,  1, -1), (-1,  1, -1),
+                ( 1,  0, -1), ( 0,  0, -1), (-1,  0, -1),
+                ( 1, -1, -1), ( 0, -1, -1), (-1, -1, -1),
+            ]
+
+            let allFaces: [[(Int,Int,Int)]] = [uPositions, rPositions, fPositions, dPositions, lPositions, bPositions]
+            for (faceIdx, positions) in allFaces.enumerated() {
+                for (i, pos) in positions.enumerated() {
+                    let faceletIdx = faceIdx * 9 + i
+                    let colorId = facelets[faceletIdx]
+                    guard colorId >= 0 && colorId < colorMap.count else { continue }
+                    let (x, y, z) = pos
+                    let key = "\(x)_\(y)_\(z)"
+                    guard let node = cubelets[key],
+                          let matIdx = matIndex(x: x, y: y, z: z) else { continue }
+                    node.geometry?.materials[matIdx].diffuse.contents = colorMap[colorId]
+                }
             }
         }
     }

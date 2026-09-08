@@ -150,25 +150,28 @@ struct HomeView: View {
     // MARK: 计时卡（三态）
     private var timingCard: some View {
         VStack(spacing: 12) {
-            HStack(spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(Self.formatTime(displayedElapsed))
-                        .font(.system(size: 32, weight: .semibold, design: .rounded))
+                        .font(.system(size: 30, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                    Text(timingStateLabel)
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.55))
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(session.history.first.map { Self.formatTime($0.duration) } ?? "—")
+                        .font(.system(size: 18, weight: .medium, design: .rounded))
                         .monospacedDigit()
                         .foregroundColor(.white)
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
-                    Text(timingStateLabel)
-                        .font(.caption2)
-                        .foregroundColor(.white.opacity(0.55))
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(session.history.first.map { Self.formatTime($0.duration) } ?? "—")
-                        .font(.system(size: 20, weight: .medium, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundColor(.white)
-                        .lineLimit(1)
                     Text("最近")
                         .font(.caption2)
                         .foregroundColor(.white.opacity(0.55))
@@ -178,8 +181,8 @@ struct HomeView: View {
             // 主操作按钮（随状态切换文案）
             timingPrimaryButton
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 20)
                 .fill(.ultraThinMaterial)
@@ -259,7 +262,7 @@ struct HomeView: View {
 
     private var timingStateLabel: String {
         switch timingState {
-        case .idle:    return session.history.isEmpty ? "本次用时" : "上次成绩已记录"
+        case .idle:    return session.history.isEmpty ? "本次用时" : "上次已记录"
         case .running: return "进行中…点击暂停"
         case .paused:  return "已暂停 · 继续或完成"
         }
