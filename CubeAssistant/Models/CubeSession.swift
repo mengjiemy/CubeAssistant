@@ -352,8 +352,12 @@ final class CubeSession: NSObject, ObservableObject {
     func solve2x2() {
         guard isOrder2 else { return }
         guard !isSolving else { return }
-        guard let c2 = model.cube2, !c2.isSolved else {
-            message = c2?.isSolved == true ? "2 阶已还原" : "无 2 阶状态"
+        guard let c2 = model.cube2 else {
+            message = "无 2 阶状态"
+            return
+        }
+        guard !c2.isSolved else {
+            message = "2 阶已还原"
             return
         }
         isSolving = true
