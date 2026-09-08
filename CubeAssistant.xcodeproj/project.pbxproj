@@ -6,6 +6,7 @@
 	objectVersion = 56;
 	objects = {
 		029270DE426D45B9BC8107BB /* CubeValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8C35B060DBE4EBC9BBD2605 /* CubeValidator.swift */; };
+		C0D1E2F3A4B5C6D7E8F90A1B /* CubeGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A1B2C3D4E5F60718293A4B5 /* CubeGeometry.swift */; };
 		D29845A847EC4358B71E776E /* FormulaLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 210F0D839B7A4FA997493A80 /* FormulaLibrary.swift */; };
 		6A296D3782F5455AA10CD3B8 /* KociembaSolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FD1D38E6EE3475DB8C6337B /* KociembaSolver.swift */; };
 		2AF82EF0BA204F40B83F848F /* Scramble.swift in Sources */ = {isa = PBXBuildFile; fileRef = E52A1F55F65849108EFF2B92 /* Scramble.swift */; };
@@ -21,6 +22,7 @@
 		8BDEB655680B4CDA9BBAD7BEDB7A8CFF /* CubeModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD65555B65EE4937BFACED784663FD22 /* CubeModel.swift */; };
 		E72C1A9B6ABF48E5955522E32BB1AAC5 /* SolveSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A78323853BA3496597F9E46575AF85B6 /* SolveSession.swift */; };
 		C8C35B060DBE4EBC9BBD2605 /* CubeValidator.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CubeValidator.swift; sourceTree = "<group>"; };
+		9A1B2C3D4E5F60718293A4B5 /* CubeGeometry.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CubeGeometry.swift; sourceTree = "<group>"; };
 		210F0D839B7A4FA997493A80 /* FormulaLibrary.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FormulaLibrary.swift; sourceTree = "<group>"; };
 		8FD1D38E6EE3475DB8C6337B /* KociembaSolver.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = KociembaSolver.swift; sourceTree = "<group>"; };
 		E52A1F55F65849108EFF2B92 /* Scramble.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = Scramble.swift; sourceTree = "<group>"; };
@@ -42,6 +44,7 @@
 		); runOnlyForDeploymentPostprocessing = 0; };
 		F82B24C4C3174204B6FE6A12 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
 				029270DE426D45B9BC8107BB /* CubeValidator.swift in Sources */,
+				C0D1E2F3A4B5C6D7E8F90A1B /* CubeGeometry.swift in Sources */,
 				D29845A847EC4358B71E776E /* FormulaLibrary.swift in Sources */,
 				6A296D3782F5455AA10CD3B8 /* KociembaSolver.swift in Sources */,
 				2AF82EF0BA204F40B83F848F /* Scramble.swift in Sources */,
@@ -60,6 +63,7 @@
 		78C2723031BF4CCA8354FE85 /* CubeAssistant */ = {isa = PBXGroup; children = (
 				0CF911F67A564FFF91FEAF64,
 				C8C35B060DBE4EBC9BBD2605,
+				9A1B2C3D4E5F60718293A4B5,
 				210F0D839B7A4FA997493A80,
 				8FD1D38E6EE3475DB8C6337B,
 				E52A1F55F65849108EFF2B92,
@@ -77,6 +81,7 @@
 			); path = CubeAssistant; sourceTree = "<group>"; };
 		F37FC9554F3B4E52AF2B4737 /* Engine */ = {isa = PBXGroup; children = (
 				C8C35B060DBE4EBC9BBD2605,
+				9A1B2C3D4E5F60718293A4B5,
 				210F0D839B7A4FA997493A80,
 				8FD1D38E6EE3475DB8C6337B,
 				E52A1F55F65849108EFF2B92

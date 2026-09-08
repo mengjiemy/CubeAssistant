@@ -142,14 +142,15 @@ struct Cube3DView: UIViewRepresentable {
             (1, -1, -1), (0, -1, -1), (-1, -1, -1),
         ]
 
-        /// 构建 26 个块（内芯 + 可见面 sticker）
+        /// 构建可见块（内芯 + 可见面 sticker）。块数 = N³-1（3 阶 → 26）。
         func buildCube(facelets: [Int]) {
             cubelets.values.forEach { $0.removeFromParentNode() }
             cubelets.removeAll()
-            for x in -1...1 {
-                for y in -1...1 {
-                    for z in -1...1 {
-                        if x == 0 && y == 0 && z == 0 { continue }
+            let h = CubeGeometry.three.coordHalf   // 3 阶 → 1，坐标 -1...1
+            for x in -h...h {
+                for y in -h...h {
+                    for z in -h...h {
+                        if !CubeGeometry.three.isVisibleCubelet(x: x, y: y, z: z) { continue }
                         let key = "\(x)_\(y)_\(z)"
                         let node = makeCubelet(x: x, y: y, z: z)
                         node.position = SCNVector3(Float(x), Float(y), Float(z))
@@ -243,7 +244,7 @@ struct Cube3DView: UIViewRepresentable {
 
         /// 根据 facelets 给每个块可见面贴对应颜色
         func applyFacelets(_ facelets: [Int]) {
-            guard facelets.count == 54 else { return }
+            guard facelets.count == CubeGeometry.three.totalFacelets else { return }
 
             // 先全部 sticker 重置为内色（避免旧颜色残留）
             for node in cubelets.values {

@@ -10,3 +10,7 @@ DerivedData/
 
 # Build artifacts (produced by CI, not committed)
 *.ipa
+
+# LocalTests compiled binaries
+LocalTests/engine_test
+LocalTests/model_test
