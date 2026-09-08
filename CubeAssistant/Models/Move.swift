@@ -45,6 +45,24 @@ public enum Move: Int, CaseIterable, Codable, Equatable, Hashable {
         }
     }
 
+    /// 中文指令（面向新手，§4.1「中文」档）。如「右面顺时针转」「顶面转 180°」。
+    public var chineseInstruction: String {
+        let faceName: String
+        switch face {
+        case .U: faceName = "顶面"
+        case .D: faceName = "底面"
+        case .L: faceName = "左面"
+        case .R: faceName = "右面"
+        case .F: faceName = "前面"
+        case .B: faceName = "后面"
+        }
+        switch turn {
+        case 1: return "\(faceName)顺时针转"
+        case 2: return "\(faceName)转 180°"
+        default: return "\(faceName)逆时针转"
+        }
+    }
+
     /// 逆转动
     public func inverted() -> Move {
         switch self {

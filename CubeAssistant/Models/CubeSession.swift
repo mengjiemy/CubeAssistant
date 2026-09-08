@@ -24,6 +24,13 @@ final class CubeSession: NSObject, ObservableObject {
     /// 当前还原指引会话（进入"学习/还原"时构建），nil 表示未进入指引
     @Published private(set) var solveSession: SolveSession?
 
+    /// 当前已对齐到轨道的第几步（0 = 起点乱态，totalSteps = 已还原）。
+    /// 转层/回退后实时 evaluate 更新；脱轨时置为 nil（需 undo 退回）。
+    @Published private(set) var alignedStep: Int = 0
+
+    /// 脱轨提示（转错/打乱导致偏离轨道时给出，如「这步该转 R」）
+    @Published private(set) var offTrackMessage: String? = nil
+
     /// 是否正在求解（后台计算 Kociemba，避免卡 UI）
     @Published private(set) var isSolving: Bool = false
 
@@ -86,8 +93,7 @@ final class CubeSession: NSObject, ObservableObject {
         var m = model
         m.reset()
         model = m
-        solveSession = nil
-        message = nil
+        clearSolve()
         stopTimerUI()
         accumulatedElapsed = 0
     }
@@ -97,7 +103,7 @@ final class CubeSession: NSObject, ObservableObject {
         var m = model
         m.scramble(count: count)
         model = m
-        solveSession = nil
+        clearSolve()
         message = "已打乱，开始练习吧"
         stopTimerUI()
         accumulatedElapsed = 0
@@ -110,7 +116,7 @@ final class CubeSession: NSObject, ObservableObject {
         switch m.setFacelets(facelets) {
         case .success:
             model = m
-            solveSession = nil
+            clearSolve()
             message = "已识别魔方状态"
             stopTimerUI()
             accumulatedElapsed = 0
@@ -133,6 +139,8 @@ final class CubeSession: NSObject, ObservableObject {
         if solved && m.identity == .virtual {
             finalizeSolve()
         }
+        // 指引会话中：转层后重新对齐轨道
+        reevaluateAlignment()
         return solved
     }
 
@@ -142,7 +150,24 @@ final class CubeSession: NSObject, ObservableObject {
         var m = model
         let ok = m.undo()
         model = m
+        if ok {
+            // 指引会话中：回退后重新对齐轨道（教程自动对齐到当前步）
+            reevaluateAlignment()
+        }
         return ok
+    }
+
+    /// 指引会话中，用当前魔方状态与轨道比对，更新对齐进度/脱轨提示。
+    private func reevaluateAlignment() {
+        guard let sol = solveSession else { return }
+        if let step = sol.alignedStep(of: model.cube) {
+            alignedStep = step
+            offTrackMessage = nil
+        } else {
+            // 脱轨：告知用户该转哪一步（下一步该做的动作）
+            let target = alignedStep < sol.totalSteps ? sol.move(at: alignedStep)?.notation : nil
+            offTrackMessage = target.map { "这步该转 \($0)，或点「回退」回到轨道" } ?? "偏离教程轨道，点「回退」返回"
+        }
     }
 
     // MARK: - 计时
@@ -231,6 +256,8 @@ final class CubeSession: NSObject, ObservableObject {
                 self.isSolving = false
                 if let session {
                     self.solveSession = session
+                    self.alignedStep = 0
+                    self.offTrackMessage = nil
                     self.message = "共 \(session.totalSteps) 步，跟着做即可"
                 } else {
                     self.message = "求解失败，请检查魔方状态"
@@ -242,7 +269,24 @@ final class CubeSession: NSObject, ObservableObject {
     /// 退出还原指引
     func clearSolve() {
         solveSession = nil
+        alignedStep = 0
+        offTrackMessage = nil
         message = nil
+    }
+
+    /// 手动推进到下一步（物理模式：App 看不见真魔方，用户自己拧完点「下一步」）。
+    /// 虚拟模式由 apply/undo 自动 evaluate，一般无需手动推进，但保留兜底。
+    func advanceStep() {
+        guard let sol = solveSession, alignedStep < sol.totalSteps else { return }
+        alignedStep += 1
+        offTrackMessage = nil
+    }
+
+    /// 手动回退一步（查看上一步）。
+    func retreatStep() {
+        guard solveSession != nil, alignedStep > 0 else { return }
+        alignedStep -= 1
+        offTrackMessage = nil
     }
 
     /// 回正 3D 视角（自增令牌，Cube3DView 检测到变化即复位相机）

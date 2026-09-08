@@ -151,5 +151,12 @@ check(abs(solveDur - 30) < 0.01, "自动停表用时 30s")
 let idleAlign = vsession.alignedStep(of: vm.cube) // vm 已还原=轨道终点
 _ = idleAlign
 
+// ---------- Move.chineseInstruction 中文指令 ----------
+print("\n【Move · 中文指令】")
+check(Move.U.chineseInstruction == "顶面顺时针转", "U → 顶面顺时针转")
+check(Move.Rp.chineseInstruction == "右面逆时针转", "R' → 右面逆时针转")
+check(Move.F2.chineseInstruction == "前面转 180°", "F2 → 前面转 180°")
+check(Move.D.chineseInstruction == "底面顺时针转", "D → 底面顺时针转")
+
 print("\n========== 结果：\(passed) 通过 / \(failed) 失败 ==========")
 if failed > 0 { exit(1) } else { print("✅ 全部通过") }

@@ -448,30 +448,9 @@ struct LearnView: View {
             Text("学习")
                 .font(.title2.weight(.bold))
                 .foregroundColor(.white)
-            Spacer()
 
             if let sol = session.solveSession {
-                VStack(spacing: 12) {
-                    Text("还原指引（共 \(sol.totalSteps) 步）")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            ForEach(Array(sol.orbit.enumerated()), id: \.offset) { i, m in
-                                Text(m.notation)
-                                    .font(.system(.body, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.8))
-                                    .padding(.vertical, 6)
-                                    .padding(.horizontal, 9)
-                                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
-                            }
-                        }
-                        .padding(.horizontal, 4)
-                    }
-                }
-                .padding(20)
-                .background(RoundedRectangle(cornerRadius: 20).fill(.ultraThinMaterial))
-                .padding(.horizontal, 20)
+                guideContent(sol)
             } else {
                 VStack(spacing: 12) {
                     Image(systemName: "graduationcap.fill")
@@ -485,9 +464,7 @@ struct LearnView: View {
             }
 
             Button {
-                if session.isSolving {
-                    // 计算中
-                } else {
+                if !session.isSolving {
                     session.solve()
                 }
             } label: {
@@ -505,7 +482,115 @@ struct LearnView: View {
         }
         .padding(.top, 8)
     }
+
+    // MARK: 指引内容（§4.2 手动放行轨道）
+
+    @ViewBuilder
+    private func guideContent(_ sol: SolveSession) -> some View {
+        let isComplete = session.alignedStep >= sol.totalSteps
+
+        VStack(spacing: 12) {
+            // 顶部：进度 + 完成态
+            if isComplete {
+                Label("已还原，太棒了！", systemImage: "checkmark.circle.fill")
+                    .font(.headline)
+                    .foregroundColor(.green)
+            } else {
+                Text("第 \(session.alignedStep + 1) / \(sol.totalSteps) 步")
+                    .font(.headline)
+                    .foregroundColor(.white)
+            }
+
+            // 当前步大字指令（中文 + 公式）
+            if !isComplete, let move = sol.move(at: session.alignedStep) {
+                VStack(spacing: 6) {
+                    Text(move.chineseInstruction)
+                        .font(.title3.weight(.bold))
+                        .foregroundColor(.white)
+                    Text(move.notation)
+                        .font(.system(.title, design: .monospaced).weight(.bold))
+                        .foregroundColor(Color(red: 0.4, green: 0.7, blue: 1.0))
+                }
+                .padding(.vertical, 8)
+            }
+
+            // 脱轨提示（转错了）
+            if let off = session.offTrackMessage {
+                Label(off, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundColor(.orange)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 8)
+            }
+
+            // 步骤轨道（横向滚动，当前步高亮、已完成步打勾）
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(Array(sol.orbit.enumerated()), id: \.offset) { i, m in
+                        stepChip(m, index: i, total: sol.totalSteps)
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
+
+            // 上一步 / 下一步（手动放行）
+            HStack(spacing: 12) {
+                guideNavButton("上一步", "arrow.backward", disabled: session.alignedStep <= 0) {
+                    session.retreatStep()
+                }
+                guideNavButton(isComplete ? "完成" : "下一步", "arrow.forward", disabled: isComplete) {
+                    session.advanceStep()
+                }
+            }
+
+            // 模式提示
+            Text(session.identity == .virtual
+                 ? "虚拟模式：直接转魔方，转对会自动前进；转错会有提示"
+                 : "真魔方模式：跟着做，每转完一步点「下一步」")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(20)
+        .background(RoundedRectangle(cornerRadius: 20).fill(.ultraThinMaterial))
+        .padding(.horizontal, 20)
+    }
+
+    private func stepChip(_ m: Move, index: Int, total: Int) -> some View {
+        let done = index < session.alignedStep
+        let current = index == session.alignedStep
+        return VStack(spacing: 2) {
+            Text(m.notation)
+                .font(.system(.body, design: .monospaced).weight(current ? .bold : .regular))
+                .foregroundColor(done ? .green : (current ? Color(red: 0.04, green: 0.52, blue: 1.0) : .white.opacity(0.6)))
+                .padding(.vertical, 6)
+                .padding(.horizontal, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(current ? Color.white.opacity(0.16) : Color.white.opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(current ? Color(red: 0.04, green: 0.52, blue: 1.0) : Color.clear, lineWidth: 2)
+                )
+        }
+    }
+
+    private func guideNavButton(_ title: String, _ icon: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 11)
+                .background(Capsule().fill(disabled ? Color.white.opacity(0.06) : Color(red: 0.04, green: 0.52, blue: 1.0)))
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.4 : 1.0)
+    }
 }
+
 
 // MARK: - 我的页
 struct MineView: View {
