@@ -1080,6 +1080,7 @@ enum Achievement: String, CaseIterable {
 
     enum UnlockState { case unlocked, locked }
 
+    @MainActor
     func state(for session: CubeSession) -> UnlockState {
         switch self {
         case .firstSolve: return session.totalSolves >= 1 ? .unlocked : .locked
@@ -1090,6 +1091,7 @@ enum Achievement: String, CaseIterable {
         }
     }
 
+    @MainActor
     func subtitle(for session: CubeSession) -> String {
         switch self {
         case .firstSolve: return "完成你的第一次复原"
