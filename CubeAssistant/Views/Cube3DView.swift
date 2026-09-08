@@ -16,10 +16,20 @@ struct Cube3DView: UIViewRepresentable {
     /// 可选：覆盖渲染的 facelets（学习页内嵌魔方用，展示「轨道中间态」而非 session.cube）。
     /// 为 nil 时按 session.cube 渲染（主页默认）。
     var overrideFacelets: [Int]? = nil
+    /// 渲染阶数：3=3阶(26块/每面9格)，2=2阶(8块/每面4格)。
+    /// 默认取 session 当前阶数；独立传入时(如无 session 的场景)可显式指定。
+    var order: Int = 3
 
-    init(session: CubeSession, overrideFacelets: [Int]? = nil) {
+    init(session: CubeSession, overrideFacelets: [Int]? = nil, order: Int? = nil) {
         self.session = session
         self.overrideFacelets = overrideFacelets
+        self.order = order ?? session.order
+    }
+
+    /// 解析本次要渲染的 facelets：优先 override；否则按当前阶数取 session 对应状态。
+    private func resolveFacelets() -> [Int] {
+        if let o = overrideFacelets { return o }
+        return session.renderedFacelets()
     }
 
     func makeUIView(context: Context) -> SCNView {
@@ -34,15 +44,23 @@ struct Cube3DView: UIViewRepresentable {
         let scene = SCNScene()
         scnView.scene = scene
         context.coordinator.scene = scene
-        let initial = overrideFacelets ?? session.cube.facelets
-        context.coordinator.buildCube(facelets: initial)
+        let initial = resolveFacelets()
+        // 按阶数构建：2 阶走独立路径（8 块），3 阶走原路径（26 块）
+        if order == 2 {
+            context.coordinator.currentOrder = 2
+            context.coordinator.buildCube2x2(facelets: initial)
+        } else {
+            context.coordinator.currentOrder = 3
+            context.coordinator.buildCube(facelets: initial)
+        }
         context.coordinator.lastFacelets = initial
 
-        // 摄像机
+        // 摄像机（2 阶整体小，拉近到约一半距离）
         let camera = SCNNode()
         camera.camera = SCNCamera()
         camera.camera?.fieldOfView = 38
-        camera.position = SCNVector3(4.5, 4.0, 6.5)
+        let distScale: Float = (order == 2) ? 0.52 : 1.0
+        camera.position = SCNVector3(4.5 * distScale, 4.0 * distScale, 6.5 * distScale)
         camera.look(at: SCNVector3(0, 0, 0))
         scene.rootNode.addChildNode(camera)
         context.coordinator.cameraNode = camera
@@ -84,10 +102,28 @@ struct Cube3DView: UIViewRepresentable {
             co.lastCameraResetToken = session.cameraResetToken
             co.resetCamera()
         }
-        let facelets = overrideFacelets ?? session.cube.facelets
+        // 阶数变化：需重建 cube（cubelet 集合不同）
+        if order != co.currentOrder {
+            let f = resolveFacelets()
+            if order == 2 {
+                co.currentOrder = 2
+                co.buildCube2x2(facelets: f)
+            } else {
+                co.currentOrder = 3
+                co.buildCube(facelets: f)
+            }
+            co.lastFacelets = f
+            co.resetCamera()  // 阶数切换后回正视角到对应距离
+            return
+        }
+        let facelets = resolveFacelets()
         guard facelets != co.lastFacelets else { return }
         co.lastFacelets = facelets
-        co.applyFacelets(facelets)
+        if co.currentOrder == 2 {
+            co.applyFacelets2x2(facelets)
+        } else {
+            co.applyFacelets(facelets)
+        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -101,11 +137,14 @@ struct Cube3DView: UIViewRepresentable {
         var cubelets: [String: SCNNode] = [:]
         var lastFacelets: [Int] = []
         var lastCameraResetToken: Int = 0
+        /// 当前渲染阶数（3/2），buildCube 时设定，驱动 applyFacelets 分派与相机距离
+        var currentOrder = 3
 
-        /// 回正相机到默认视角（顶面朝上、前面朝前）
+        /// 回正相机到默认视角（顶面朝上、前面朝前），按阶数调距离
         func resetCamera() {
             guard let camera = cameraNode else { return }
-            camera.position = SCNVector3(4.5, 4.0, 6.5)
+            let distScale: Float = (currentOrder == 2) ? 0.52 : 1.0
+            camera.position = SCNVector3(4.5 * distScale, 4.0 * distScale, 6.5 * distScale)
             camera.look(at: SCNVector3(0, 0, 0))
             // 同步重置内置相机控制器状态，避免惯性残留
             scnView?.defaultCameraController.stopInertia()
@@ -268,6 +307,85 @@ struct Cube3DView: UIViewRepresentable {
                 let key = "\(x)_\(y)_\(z)"
                 guard let node = cubelets[key] else { continue }
                 let dir = dirForFaceletIndex(idx)
+                guard let sticker = node.childNode(withName: "sticker_\(dir.rawValue)", recursively: false) else { continue }
+                sticker.geometry?.materials.first?.diffuse.contents = colorMap[colorId]
+            }
+        }
+
+        // MARK: - 2 阶隔离渲染路径（8 角块，无中心/棱）
+        // 说明：2 阶 24 面片通过 Cube2x2.to3x3Index 映射到 3 阶角贴纸(0,2,6,8 偏移)，
+        // 再用本类的 3 阶 faceMap 得块坐标、dirForFaceletIndex 得面方向，×0.5 即 2 阶半整数坐标。
+        // 因此这里无需为 2 阶单独维护一份 faceMap —— 复用 3 阶权威映射，杜绝坐标错配。
+        /// 2 阶 cubelet 字典：key "x_y_z"（半整数 ×10 避免小数点 key，如 "5_-5_5" 表 0.5,-0.5,0.5）
+        var cubelets2x2: [String: SCNNode] = [:]
+
+        /// 把 3 阶整数坐标(±1) 转成 2 阶 key(半整数×10，避免负号歧义需带符号)
+        private func key2x2(_ x3: Int, _ y3: Int, _ z3: Int) -> String {
+            // 3 阶角块坐标 ±1 → 2 阶 ±0.5，×10 得 ±5
+            let xs = (x3 >= 0 ? "+" : "-") + String(abs(x3) * 5)
+            let ys = (y3 >= 0 ? "+" : "-") + String(abs(y3) * 5)
+            let zs = (z3 >= 0 ? "+" : "-") + String(abs(z3) * 5)
+            return "\(xs)_\(ys)_\(zs)"
+        }
+
+        /// 构建 2 阶 8 角块
+        func buildCube2x2(facelets: [Int]) {
+            cubelets2x2.values.forEach { $0.removeFromParentNode() }
+            cubelets2x2.removeAll()
+            // 8 个角块坐标（3 阶 8 个角的 ±1 组合）
+            let cornerSigns: [(Int, Int, Int)] = [
+                (-1, -1, -1), (1, -1, -1), (-1, 1, -1), (1, 1, -1),
+                (-1, -1,  1), (1, -1,  1), (-1, 1,  1), (1, 1,  1),
+            ]
+            for (sx, sy, sz) in cornerSigns {
+                let key = key2x2(sx, sy, sz)
+                let node = makeCubelet2x2(sx: sx, sy: sy, sz: sz)
+                node.position = SCNVector3(Float(sx) * 0.5, Float(sy) * 0.5, Float(sz) * 0.5)
+                scene.rootNode.addChildNode(node)
+                cubelets2x2[key] = node
+            }
+            applyFacelets2x2(facelets)
+        }
+
+        /// 创建 2 阶角块：黑色内芯 + 3 个可见外表面 sticker（角块必暴露 3 面）
+        private func makeCubelet2x2(sx: Int, sy: Int, sz: Int) -> SCNNode {
+            let core = SCNBox(width: 0.94, height: 0.94, length: 0.94, chamferRadius: 0.04)
+            let coreMat = SCNMaterial()
+            coreMat.diffuse.contents = innerColor
+            coreMat.lightingModel = .physicallyBased
+            coreMat.roughness.contents = 0.35
+            coreMat.metalness.contents = 0.0
+            core.materials = [coreMat]
+            let node = SCNNode(geometry: core)
+            node.castsShadow = true
+            node.name = "cubelet2_\(key2x2(sx, sy, sz))"
+            // 角块暴露：符号为正的方向才有外表面
+            if sx > 0 { addSticker(to: node, dir: .px) }
+            if sx < 0 { addSticker(to: node, dir: .nx) }
+            if sy > 0 { addSticker(to: node, dir: .py) }
+            if sy < 0 { addSticker(to: node, dir: .ny) }
+            if sz > 0 { addSticker(to: node, dir: .pz) }
+            if sz < 0 { addSticker(to: node, dir: .nz) }
+            return node
+        }
+
+        /// 给 2 阶魔方上色：24 facelet → 8 块对应可见面
+        func applyFacelets2x2(_ facelets: [Int]) {
+            guard facelets.count == Cube2x2Geometry.totalFacelets else { return }
+            // 先全部 sticker 重置为内色
+            for node in cubelets2x2.values {
+                for child in node.childNodes where child.name?.hasPrefix("sticker_") == true {
+                    child.geometry?.materials.first?.diffuse.contents = innerColor
+                }
+            }
+            for (i, colorId) in facelets.enumerated() {
+                guard colorId >= 0 && colorId < colorMap.count else { continue }
+                let idx3 = Cube2x2.to3x3Index(i)   // 2 阶 facelet → 3 阶角贴纸索引
+                guard idx3 < faceMap.count else { continue }
+                let (x3, y3, z3) = faceMap[idx3]     // 3 阶整数块坐标(±1)
+                let key = key2x2(x3, y3, z3)
+                guard let node = cubelets2x2[key] else { continue }
+                let dir = dirForFaceletIndex(idx3)   // 该面方向
                 guard let sticker = node.childNode(withName: "sticker_\(dir.rawValue)", recursively: false) else { continue }
                 sticker.geometry?.materials.first?.diffuse.contents = colorMap[colorId]
             }

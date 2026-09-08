@@ -24,6 +24,11 @@ final class CubeSession: NSObject, ObservableObject {
     /// 当前还原指引会话（进入"学习/还原"时构建），nil 表示未进入指引
     @Published private(set) var solveSession: SolveSession?
 
+    /// **2 阶专用还原指引**：解法步骤（Solver2x2 秒解）+ 当前步号。
+    /// 2 阶步数短(≤11)，用"照着转，转完检测还原"的极简指引，不依赖 3 阶 SolveSession 轨道。
+    @Published private(set) var solve2x2Steps: [Move] = []
+    @Published private(set) var solve2x2StepIndex: Int = 0
+
     /// 当前已对齐到轨道的第几步（0 = 起点乱态，totalSteps = 已还原）。
     /// 转层/回退后实时 evaluate 更新；脱轨时置为 nil（需 undo 退回）。
     @Published private(set) var alignedStep: Int = 0
@@ -61,6 +66,8 @@ final class CubeSession: NSObject, ObservableObject {
     var identity: CubeIdentity { model.identity }
     /// 转动方式（按钮/手势）
     var turnMode: TurnMode { model.turnMode }
+    /// 魔方阶数（3/2 等）
+    var order: Int { model.order }
     /// 是否正在计时
     var isTiming: Bool { model.isTiming }
     /// 是否已还原
@@ -71,6 +78,30 @@ final class CubeSession: NSObject, ObservableObject {
     var undoCount: Int { model.undoStack.count }
 
     // MARK: - 身份 / 模式切换
+
+    /// 切换魔方阶数（2 阶 / 3 阶）。切换时重建模型、清指引、复位计时。
+    func setOrder(_ newOrder: Int) {
+        guard newOrder == 2 || newOrder == 3, model.order != newOrder else { return }
+        let m = CubeModel(identity: model.identity, order: newOrder)
+        model = m
+        clearSolve()
+        stopTimerUI()
+        accumulatedElapsed = 0
+        message = newOrder == 2 ? "已切换到 2 阶" : "已切换到 3 阶"
+    }
+
+    /// 当前是否 2 阶
+    var isOrder2: Bool { model.order == 2 }
+
+    /// 2 阶状态（order==2 时非 nil）
+    var cube2x2: Cube2x2? { model.cube2 }
+
+    /// 按当前阶数返回用于渲染的 facelets（3阶=54，2阶=24）。
+    /// Cube3DView 无 overrideFacelets 时（主页）据此渲染当前魔方。
+    func renderedFacelets() -> [Int] {
+        if model.order == 2 { return model.cube2?.facelets ?? [] }
+        return model.cube.facelets
+    }
 
     /// 切换魔方身份（物理 ↔ 虚拟）。切换时重置计时，避免状态混乱。
     func setIdentity(_ id: CubeIdentity) {
@@ -143,6 +174,8 @@ final class CubeSession: NSObject, ObservableObject {
         // 虚拟模式：转完检测是否还原，还原则自动停表
         if solved && m.identity == .virtual {
             finalizeSolve()
+            // 2 阶指引：还原成功即结束指引，避免卡在"下一步"
+            if model.order == 2 { clear2x2Solve() }
         }
         // 指引会话中：转层后重新对齐轨道
         reevaluateAlignment()
@@ -275,12 +308,13 @@ final class CubeSession: NSObject, ObservableObject {
         }
     }
 
-    /// 退出还原指引
+    /// 退出还原指引（3 阶 SolveSession + 2 阶极简指引一并清）
     func clearSolve() {
         solveSession = nil
         alignedStep = 0
         offTrackMessage = nil
         message = nil
+        clear2x2Solve()
     }
 
     /// 手动推进到下一步（物理模式：App 看不见真魔方，用户自己拧完点「下一步」）。
@@ -301,6 +335,60 @@ final class CubeSession: NSObject, ObservableObject {
     /// 回正 3D 视角（自增令牌，Cube3DView 检测到变化即复位相机）
     func resetCamera() {
         cameraResetToken += 1
+    }
+
+    // MARK: - 2 阶还原指引（极简：Solver2x2 秒解 → 照做 → 转完检测）
+
+    /// 是否处于 2 阶指引中
+    var isIn2x2Solve: Bool { isOrder2 && !solve2x2Steps.isEmpty }
+
+    /// 当前 2 阶指引应转的下一步（nil = 未进入/已完成）
+    func current2x2Move() -> Move? {
+        guard isIn2x2Solve, solve2x2StepIndex < solve2x2Steps.count else { return nil }
+        return solve2x2Steps[solve2x2StepIndex]
+    }
+
+    /// 求解当前 2 阶状态（后台，避免卡 UI），产出解法步骤。
+    func solve2x2() {
+        guard isOrder2 else { return }
+        guard !isSolving else { return }
+        guard let c2 = model.cube2, !c2.isSolved else {
+            message = c2?.isSolved == true ? "2 阶已还原" : "无 2 阶状态"
+            return
+        }
+        isSolving = true
+        message = nil
+        let facelets = c2.facelets   // 值类型，主线程取值后跨线程安全
+        DispatchQueue.global(qos: .userInitiated).async {
+            let steps = Solver2x2.solve(facelets) ?? []
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.isSolving = false
+                guard !steps.isEmpty else {
+                    self.message = "2 阶求解失败，请检查状态"
+                    return
+                }
+                self.solve2x2Steps = steps
+                self.solve2x2StepIndex = 0
+                self.message = "共 \(steps.count) 步，照着转即可"
+            }
+        }
+    }
+
+    /// 标记已按指引转了当前步 → 前进一步；若已还原则清指引
+    func advance2x2Step() {
+        guard isIn2x2Solve else { return }
+        solve2x2StepIndex += 1
+        if solve2x2StepIndex >= solve2x2Steps.count {
+            solve2x2Steps = []
+            solve2x2StepIndex = 0
+        }
+    }
+
+    /// 退出 2 阶指引
+    func clear2x2Solve() {
+        solve2x2Steps = []
+        solve2x2StepIndex = 0
     }
 
     // MARK: - Timer（UI 显示驱动）

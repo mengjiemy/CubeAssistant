@@ -262,5 +262,41 @@ if let ld = legacyJSON.data(using: .utf8), case .success(let rl) = BackupManager
     check(rl.records[0].order == 3, "老记录(无order)解码补默认 3")
 } else { check(false, "老版本无 order JSON 应能解码") }
 
+// ---- CubeModel.order（v15 多阶分支）----
+// 2 阶模型：打乱 → 手动转 → 还原判定 → undo
+do {
+    var m2 = CubeModel(order: 2)
+    check(m2.order == 2, "CubeModel 默认 2 阶可建")
+    check(m2.isSolved, "2 阶初始还原")
+    // 2 阶打乱后非还原
+    m2.scramble(count: 12)
+    check(!m2.isSolved, "2 阶打乱后非还原")
+    check(m2.cube2 != nil, "2 阶模式有 cube2 状态")   // CubeModel.cube2 private(set) 外部只读
+    // 求解 2 阶并手动转回
+    if let steps = Solver2x2.solve(m2.cube2!.facelets) {
+        for mv in steps { _ = m2.apply(mv) }
+        check(m2.isSolved, "按解转回 2 阶还原")
+    } else { check(false, "2 阶求解失败") }
+    // undo 回到打乱态（退栈）
+    // （上面已转回还原，undoStack 有步；撤到底应回到打乱后非还原 checkpoint）
+}
+// 2 阶手动转一步 U 不还原，undo 返回
+do {
+    var m = CubeModel(order: 2)
+    m.scramble(count: 12)
+    _ = m.apply(Move(rawValue: 0)!)   // U
+    // undo 后回到打乱态（非还原）
+    let hadUndo = m.undo()
+    check(hadUndo, "2 阶 undo 有效")
+}
+// 3 阶模型仍正常（回归）
+do {
+    var m3 = CubeModel(order: 3)
+    check(m3.order == 3, "CubeModel 3 阶")
+    check(m3.isSolved, "3 阶初始还原")
+    m3.scramble(count: 25)
+    check(!m3.isSolved, "3 阶打乱后非还原")
+}
+
 print("\n========== 结果：\(passed) 通过 / \(failed) 失败 ==========")
 if failed > 0 { exit(1) } else { print("✅ 全部通过") }

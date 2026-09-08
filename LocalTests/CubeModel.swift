@@ -34,14 +34,14 @@ enum TurnMode: Equatable, Codable {
 /// 3. 打乱 / 重置 / 扫描输入 → 设 checkpoint、清空 undo 栈
 /// 4. 计时（虚拟自动判定停表 / 物理手动）—— 用时用 Date 计算，不依赖 Timer
 struct CubeModel: Equatable {
-    /// 当前魔方状态（facelet）
+    /// 当前魔方状态（facelet）。**order==3 时有效**（54 facelet）。
     var cube: CubeState
     /// 魔方身份（默认物理真魔方，功能说明书 §10 定稿）
     var identity: CubeIdentity = .physical
-    /// 阶数。**v1.0 固定 3 阶**（转动表/求解器/3D 渲染均为 3 阶实现）。
-    /// ⚠️ 注意：本字段当前仅作「UI/数据 预留」，不代表引擎已支持 2-10 阶。
-    /// 真正支持多阶需：①CubeGeometry 已就绪（几何量按 N 推导）②生成 N 阶
-    /// 转动置换表（当前 movePerms 仅 3 阶）③求解器换高阶算法（Kociemba 只解 3 阶）。
+    /// 阶数。**默认 3 阶**。
+    /// - order==3：用 `cube`（CubeState，54 facelet）+ 3 阶 movePerms。
+    /// - order==2：用 `cube2`（Cube2x2，24 facelet）—— 独立存储，隔离不碰 3 阶路径。
+    /// ⚠️ 4-10 阶需降阶引擎（CubeGeometry 已就绪几何量，但转动表/求解未实现）。
     var order: Int = 3
     /// 转动方式（按钮/手势）
     var turnMode: TurnMode = .buttons
@@ -50,6 +50,11 @@ struct CubeModel: Equatable {
     /// 每次「打乱 / 重置 / 扫描输入」重设 = cube 快照，并清空 undoStack。
     /// undo 只能一路撤回到这个 checkpoint（= "最初"），不能越界。
     private(set) var checkpointFacelets: [Int]
+    /// **order==2 时的魔方状态**（24 facelet）。order==3 时为 nil（用 cube）。
+    /// 隔离存储：2 阶完全走 Cube2x2 体系，不碰 3 阶 CubeState/求解器依赖。
+    private(set) var cube2: Cube2x2?
+    /// 2 阶 undo 栈基准态（order==2 用）
+    private(set) var checkpoint2: [Int]?
     /// 用户自 checkpoint 之后实际施加的每一步（undo = 弹出并逆转动）
     private(set) var undoStack: [Move] = []
 
@@ -59,16 +64,24 @@ struct CubeModel: Equatable {
     /// 计时开始时刻
     private(set) var timingStart: Date?
 
-    init(cube: CubeState = CubeState(solved: true), identity: CubeIdentity = .physical) {
+    init(cube: CubeState = CubeState(solved: true), identity: CubeIdentity = .physical, order: Int = 3) {
         self.cube = cube
         self.identity = identity
+        self.order = order
         self.checkpointFacelets = cube.facelets
+        if order == 2 {
+            self.cube2 = Cube2x2(solved: true)
+            self.checkpoint2 = self.cube2?.facelets
+        }
     }
 
     // MARK: - 查询
 
-    /// 是否已还原
-    var isSolved: Bool { cube.isSolved }
+    /// 是否已还原（按阶数判定）
+    var isSolved: Bool {
+        if order == 2 { return cube2?.isSolved ?? true }
+        return cube.isSolved
+    }
 
     /// 是否能继续 undo（栈里还有步）
     var canUndo: Bool { !undoStack.isEmpty }
@@ -84,6 +97,13 @@ struct CubeModel: Equatable {
     /// 重置为还原态（六面纯色），计时清零，undo 清空。
     /// 物理/虚拟通用：主页「重置」= 回出厂 + 计时归零（说明书 §9#1）。
     mutating func reset() {
+        if order == 2 {
+            cube2 = Cube2x2(solved: true)
+            checkpoint2 = cube2?.facelets
+            undoStack = []
+            stopTiming()
+            return
+        }
         cube = CubeState(solved: true)
         checkpointFacelets = cube.facelets
         undoStack = []
@@ -93,6 +113,14 @@ struct CubeModel: Equatable {
     /// 随机打乱（保证可还原）。虚拟魔方打乱后通常紧接着开始练习计时。
     /// physical 打乱后是否计时由用户手动决定（说明书 §2.2）。
     mutating func scramble(count: Int = 25) {
+        if order == 2 {
+            // 2 阶打乱：God's number 11，给足步数（~12）保证足够乱
+            cube2 = Cube2x2.scrambled(count: count <= 12 ? count : 12)
+            checkpoint2 = cube2?.facelets
+            undoStack = []
+            stopTiming()
+            return
+        }
         let moves = ScrambleGenerator.generate(length: count)
         var c = CubeState(solved: true)
         for m in moves { c.apply(m.rawValue) }
@@ -102,10 +130,21 @@ struct CubeModel: Equatable {
         stopTiming()
     }
 
-    /// 由扫描/手填写入完整 54 色。校验通过 → 更新模型、设 checkpoint。
+    /// 由扫描/手填写入完整色。校验通过 → 更新模型、设 checkpoint。
+    /// - order==3：facelets 为 54；order==2：facelets 为 24（Cube2x2）。
     /// 返回是否合法（非法不入库，给出原因）。
     @discardableResult
     mutating func setFacelets(_ facelets: [Int]) -> Result<Void, CubeModelError> {
+        if order == 2 {
+            guard facelets.count == Cube2x2Geometry.totalFacelets else {
+                return .failure(.invalidState("2 阶需 24 个色块"))
+            }
+            cube2 = Cube2x2(facelets: facelets)
+            checkpoint2 = cube2?.facelets
+            undoStack = []
+            stopTiming()
+            return .success(())
+        }
         let errs = CubeValidator.validate(facelets: facelets)
         guard errs.isEmpty else {
             return .failure(.invalidState(errs.map { "\($0)" }.joined(separator: "、")))
@@ -119,11 +158,15 @@ struct CubeModel: Equatable {
 
     // MARK: - 手动转层（按钮/手势双模式都走这里）
 
-    /// 施加一步转动：压入 undo 栈，更新 cube。
+    /// 施加一步转动：压入 undo 栈，更新 cube（按阶数分派 2 阶/3 阶）。
     /// 返回转动后是否恰好还原（供虚拟模式自动判定停表用）。
     @discardableResult
     mutating func apply(_ move: Move) -> Bool {
         undoStack.append(move)
+        if order == 2 {
+            cube2?.apply(move.rawValue)
+            return cube2?.isSolved ?? false
+        }
         cube.apply(move.rawValue)
         return cube.isSolved
     }
@@ -134,6 +177,10 @@ struct CubeModel: Equatable {
     @discardableResult
     mutating func undo() -> Bool {
         guard let last = undoStack.popLast() else { return false }
+        if order == 2 {
+            cube2?.apply(last.inverted().rawValue)
+            return true
+        }
         cube.apply(last.inverted().rawValue)
         return true
     }

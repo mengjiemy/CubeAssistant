@@ -97,6 +97,17 @@ struct HomeView: View {
                     .font(.title2.weight(.bold))
                     .foregroundColor(.white)
                 Spacer()
+                // 阶数切换（2 阶 / 3 阶）
+                Picker("阶数", selection: Binding(
+                    get: { session.order },
+                    set: { session.setOrder($0) }
+                )) {
+                    Text("2阶").tag(2)
+                    Text("3阶").tag(3)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 110)
+                .tint(Color(red: 0.04, green: 0.52, blue: 1.0))
                 Button {
                     session.setIdentity(session.identity == .physical ? .virtual : .physical)
                 } label: {
@@ -458,7 +469,9 @@ struct LearnView: View {
 
             ScrollView {
                 VStack(spacing: 16) {
-                    if let sol = session.solveSession {
+                    if session.isIn2x2Solve {
+                        guide2x2Content
+                    } else if let sol = session.solveSession {
                         guideContent(sol)
                     } else {
                         studyCenter
@@ -467,10 +480,14 @@ struct LearnView: View {
                 .padding(.bottom, 12)
             }
 
-            // 底部固定「求解」按钮（保持可见）
+            // 底部固定「求解」按钮（保持可见；按阶数走对应求解器）
             Button {
                 if !session.isSolving {
-                    session.solve()
+                    if session.isOrder2 {
+                        session.solve2x2()
+                    } else {
+                        session.solve()
+                    }
                 }
             } label: {
                 Label(session.isSolving ? "计算中…" : "求解", systemImage: "lightbulb.fill")
@@ -487,6 +504,63 @@ struct LearnView: View {
             .padding(.bottom, 14)
         }
         .padding(.top, 8)
+    }
+
+    // MARK: 2 阶指引（极简：Solver2x2 秒解 → 照做 → 手动点下一步）
+
+    /// 2 阶还原指引内容（相对 SolveSession 简单：无轨道对齐校验，步数短≤11）
+    private var guide2x2Content: some View {
+        let current = session.current2x2Move()
+        let total = session.solve2x2Steps.count
+        let isLastDone = current == nil && total > 0   // 已全部转完(advance 已清)或用完
+
+        VStack(spacing: 14) {
+            // 内嵌 2 阶 3D 预览（展示当前实际状态，用户在虚拟魔方上照转）
+            Cube3DView(session: session, order: 2)
+                .frame(height: 230)
+                .clipShape(RoundedRectangle(cornerRadius: 20))
+
+            if isLastDone {
+                Label("2 阶已还原，太棒了！", systemImage: "checkmark.circle.fill")
+                    .font(.headline)
+                    .foregroundColor(.green)
+            } else if let move = current {
+                Text("第 \(session.solve2x2StepIndex + 1) / \(total) 步")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                VStack(spacing: 6) {
+                    Text(move.chineseInstruction)
+                        .font(.title3.weight(.bold))
+                        .foregroundColor(.white)
+                        .multilineTextAlignment(.center)
+                    Text(move.notation)
+                        .font(.system(.title, design: .monospaced).weight(.bold))
+                        .foregroundColor(Color(red: 0.4, green: 0.7, blue: 1.0))
+                }
+                .padding(.vertical, 6)
+                Text("在下方魔方上转这一层，转完点「下一步」")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
+                Button {
+                    session.advance2x2Step()
+                } label: {
+                    Label("我转好了，下一步", systemImage: "arrow.right.circle.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Capsule().fill(Color(red: 0.04, green: 0.52, blue: 1.0)))
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text("准备就绪")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
     }
 
     // MARK: 学习中心（§5：帮助 FAQ + 课程入口）
