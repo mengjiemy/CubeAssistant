@@ -45,12 +45,12 @@ public enum Move: Int, CaseIterable, Codable, Equatable, Hashable {
     public var slice: Int {
         switch self {
         case .U, .U2, .Up, .E, .E2, .Ep: return 1
-        case .M, .M2, .Mp: return 0
+        case .D, .D2, .Dp: return -1
         case .R, .R2, .Rp: return 1
-        case .D, .D2, .Dp, .Ep: return -1
-        case .L, .L2, .Lp, .Mp: return -1
+        case .L, .L2, .Lp: return -1
         case .F, .F2, .Fp, .S, .S2, .Sp: return 1
-        case .B, .B2, .Bp, .Sp: return -1
+        case .B, .B2, .Bp: return -1
+        case .M, .M2, .Mp: return 0
         default: return 0
         }
     }

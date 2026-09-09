@@ -78,15 +78,15 @@ struct Cube3DView: UIViewRepresentable {
         /// 例如：x 轴 +1 层 → R，x 轴 0 层（中层）→ M，y 轴 +1 层 → U
         var baseMove: Move {
             switch (axis, slice) {
-            case (.x,  1): return .R
-            case (.x,  0): return .M
-            case (.x, -1): return .L
-            case (.y,  1): return .U
-            case (.y,  0): return .E
-            case (.y, -1): return .D
-            case (.z,  1): return .F
-            case (.z,  0): return .S
-            case (.z, -1): return .B
+            case (Axis.x,  1): return .R
+            case (Axis.x,  0): return .M
+            case (Axis.x, -1): return .L
+            case (Axis.y,  1): return .U
+            case (Axis.y,  0): return .E
+            case (Axis.y, -1): return .D
+            case (Axis.z,  1): return .F
+            case (Axis.z,  0): return .S
+            case (Axis.z, -1): return .B
             }
         }
 
