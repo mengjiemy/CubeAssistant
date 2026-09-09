@@ -94,7 +94,7 @@ struct ContentView: View {
 // MARK: - 主页
 struct HomeView: View {
     @ObservedObject var session: CubeSession
-    @State private var selectedFace: Face = .U
+    @State private var selectedLayer: Cube3DView.SelectedLayer = .init(outer: .U)
     @State private var timingState: TimingState = .idle
 
     /// 计时三态：未开始 → 进行中 → 暂停
@@ -186,8 +186,8 @@ struct HomeView: View {
                     ZStack(alignment: .topTrailing) {
                         Cube3DView(
                             session: session,
-                            selectedFace: selectedFace,
-                            onFaceSelected: { selectedFace = $0 },
+                            selectedLayer: selectedLayer,
+                            onLayerSelected: { selectedLayer = $0 },
                             onTurnRequest: { move in
                                 _ = session.apply(move)
                             }
@@ -381,9 +381,9 @@ struct HomeView: View {
     }
 
     private func faceButton(_ f: Face) -> some View {
-        let selected = selectedFace == f
+        let selected = selectedLayer == Cube3DView.SelectedLayer(outer: f)
         return Button {
-            selectedFace = f
+            selectedLayer = Cube3DView.SelectedLayer(outer: f)
         } label: {
             VStack(spacing: 1) {
                 Text(faceLetter(f))
@@ -490,26 +490,35 @@ struct HomeView: View {
     }
 
     private func applyTurn(clockwise: Bool) {
-        let move = resolveMove(face: selectedFace, clockwise: clockwise)
+        let move = resolveMove(layer: selectedLayer, clockwise: clockwise)
         _ = session.apply(move)
     }
 
-    /// 选面 + 顺/逆时针 → 标准 Move。方向与标准魔方记号一致（固定世界坐标）。
-    private func resolveMove(face: Face, clockwise: Bool) -> Move {
-        switch (face, clockwise) {
-        case (.U, true):  return .U
-        case (.U, false): return .Up
-        case (.D, true):  return .D
-        case (.D, false): return .Dp
-        case (.L, true):  return .L
-        case (.L, false): return .Lp
-        case (.R, true):  return .R
-        case (.R, false): return .Rp
-        case (.F, true):  return .F
-        case (.F, false): return .Fp
-        case (.B, true):  return .B
-        case (.B, false): return .Bp
+    /// 选层 + 顺/逆时针 → 标准 Move（含 M/E/S 内层）。
+    /// 方向以命中的 normalFace 为观察基准：右/上=从该面看顺时针。
+    private func resolveMove(layer: Cube3DView.SelectedLayer, clockwise: Bool) -> Move {
+        let baseMove: Move
+        switch (layer.axis, layer.slice) {
+        case (.x, 1):  baseMove = .R
+        case (.x, 0):  baseMove = .Mp
+        case (.x, -1): baseMove = .Lp
+        case (.y, 1):  baseMove = .U
+        case (.y, 0):  baseMove = .Ep
+        case (.y, -1): baseMove = .Dp
+        case (.z, 1):  baseMove = .F
+        case (.z, 0):  baseMove = .Sp
+        case (.z, -1): baseMove = .Bp
+        default:       baseMove = .R
         }
+        let standardFace: Face
+        switch layer.axis {
+        case .x: standardFace = .R
+        case .y: standardFace = .U
+        case .z: standardFace = .F
+        }
+        let sameDirection = (layer.normalFace == standardFace)
+        let effectiveClockwise = sameDirection ? clockwise : !clockwise
+        return effectiveClockwise ? baseMove : baseMove.inverted()
     }
 
     static func formatTime(_ t: TimeInterval) -> String { formatSolveTime(t) }
