@@ -32,13 +32,18 @@ struct Cube3DView: UIViewRepresentable {
     /// 手势交互回调：滑动触发一次转动请求。
     var onTurnRequest: ((Move) -> Void)? = nil
 
+    /// 是否启用「手势模式」交互：true = 点击选层 + 选中后锁定相机 + 滑动转层；
+    /// false = 按钮模式（点击/滑动交给按钮，选层只画蓝框，相机始终可旋转）。
+    var gestureInteractionEnabled: Bool = false
+
     init(session: CubeSession,
          overrideFacelets: [Int]? = nil,
          order: Int? = nil,
          selectedLayer: SelectedLayer? = nil,
          onLayerSelected: ((SelectedLayer) -> Void)? = nil,
          onLayerDeselected: (() -> Void)? = nil,
-         onTurnRequest: ((Move) -> Void)? = nil) {
+         onTurnRequest: ((Move) -> Void)? = nil,
+         gestureInteractionEnabled: Bool = false) {
         self.session = session
         self.overrideFacelets = overrideFacelets
         self.order = order ?? session.order
@@ -46,6 +51,7 @@ struct Cube3DView: UIViewRepresentable {
         self.onLayerSelected = onLayerSelected
         self.onLayerDeselected = onLayerDeselected
         self.onTurnRequest = onTurnRequest
+        self.gestureInteractionEnabled = gestureInteractionEnabled
     }
 
     /// 一个层切片：轴 + 切片坐标 + 命中面法向（决定滑动方向观察基准）。
@@ -190,25 +196,17 @@ struct Cube3DView: UIViewRepresentable {
 
         co.scnView = scnView
 
-        // 手势识别器（仅在提供回调时启用）
-        if onLayerSelected != nil || onTurnRequest != nil {
-            let tap = UITapGestureRecognizer(target: co, action: #selector(Coordinator.handleTap(_:)))
-            tap.delegate = co
-            scnView.addGestureRecognizer(tap)
-            co.tapGesture = tap
-
-            let pan = UIPanGestureRecognizer(target: co, action: #selector(Coordinator.handlePan(_:)))
-            pan.delegate = co
-            pan.maximumNumberOfTouches = 1
-            scnView.addGestureRecognizer(pan)
-            co.panGesture = pan
-        }
+        // 手势识别器（仅在手势模式启用；按钮模式不拦截点击/滑动）
+        co.syncGestures(enabled: gestureInteractionEnabled)
 
         return scnView
     }
 
     func updateUIView(_ uiView: SCNView, context: Context) {
         let co = context.coordinator
+
+        // 模式切换：同步手势识别器的存在（手势模式=启用 tap/pan，按钮模式=移除）
+        co.syncGestures(enabled: gestureInteractionEnabled)
 
         // 相机复位
         if session.cameraResetToken != co.lastCameraResetToken {
@@ -237,13 +235,15 @@ struct Cube3DView: UIViewRepresentable {
             return
         }
 
-        // 选中层变化：重画高亮 + 锁定/解锁相机
+        // 选中层变化：重画高亮 + 锁定/解锁相机（仅手势模式锁定相机）
         if selectedLayer != co.currentHighlightLayer {
             co.applyHighlight(layer: selectedLayer)
-            // 选中时锁定相机（不允许单指 pan 旋转视角），取消选中时恢复
-            let shouldLock = (selectedLayer != nil)
-            if uiView.allowsCameraControl == shouldLock {
-                uiView.allowsCameraControl = !shouldLock
+            // 手势模式：选中时锁定相机（不允许单指 pan 旋转视角），取消选中时恢复
+            if gestureInteractionEnabled {
+                let shouldLock = (selectedLayer != nil)
+                if uiView.allowsCameraControl == shouldLock {
+                    uiView.allowsCameraControl = !shouldLock
+                }
             }
         }
 
@@ -296,6 +296,42 @@ struct Cube3DView: UIViewRepresentable {
         weak var tapGesture: UITapGestureRecognizer?
         weak var panGesture: UIPanGestureRecognizer?
         private var panStartLayer: SelectedLayer? = nil
+        private var gesturesInstalled = false
+
+        /// 按需安装/移除 tap + pan 手势识别器（模式切换时同步）。
+        func syncGestures(enabled: Bool) {
+            guard enabled != gesturesInstalled else { return }
+            gesturesInstalled = enabled
+            guard let scnView = scnView else { return }
+
+            if enabled {
+                if tapGesture == nil {
+                    let tap = UITapGestureRecognizer(target: self, action: #selector(Coordinator.handleTap(_:)))
+                    tap.delegate = self
+                    scnView.addGestureRecognizer(tap)
+                    tapGesture = tap
+                }
+                if panGesture == nil {
+                    let pan = UIPanGestureRecognizer(target: self, action: #selector(Coordinator.handlePan(_:)))
+                    pan.delegate = self
+                    pan.maximumNumberOfTouches = 1
+                    scnView.addGestureRecognizer(pan)
+                    panGesture = pan
+                }
+            } else {
+                if let tap = tapGesture {
+                    scnView.removeGestureRecognizer(tap)
+                    tapGesture = nil
+                }
+                if let pan = panGesture {
+                    scnView.removeGestureRecognizer(pan)
+                    panGesture = nil
+                }
+                // 取消可能残留的选中，恢复相机可旋转
+                currentHighlightLayer = nil
+                panStartLayer = nil
+            }
+        }
 
         func resetCamera() {
             guard let scnView = scnView, let defaultCam = defaultCameraNode else { return }
@@ -770,7 +806,13 @@ struct Cube3DView: UIViewRepresentable {
             return (coords[0], coords[1], coords[2])
         }
 
-        /// 把命中点映射到 9 种 SelectedLayer 之一
+        /// 把命中点映射到 9 种 SelectedLayer 之一。
+        ///
+        /// 3 阶规则：外层可直接点该面角块选中；中层（M/E/S）在该面表现为「中央带」，
+        /// 点中央带（垂直于法向的两个轴里恰有一个坐标 = 0）即选中对应中层：
+        ///   - 点 F/B 面：x==0 → M 层，y==0 → E 层，否则 → 外层
+        ///   - 点 U/D 面：x==0 → M 层，z==0 → S 层，否则 → 外层
+        ///   - 点 R/L 面：y==0 → E 层，z==0 → S 层，否则 → 外层
         private func layerForHit(_ hit: HitInfo) -> SelectedLayer {
             let normalFace = hit.face
 
@@ -779,8 +821,7 @@ struct Cube3DView: UIViewRepresentable {
                 return SelectedLayer(outer: normalFace)
             }
 
-            // 2 阶：每个 cubelet 暴露 3 个 sticker，没有「内层」概念 → 选外层 6 个之一
-            // 2 阶外层：选 normalFace 对应的 4 stickers（每角块的那一面）
+            // 2 阶：没有「内层」概念 → 选外层 6 个之一
             if currentOrder == 2 {
                 return SelectedLayer(outer: normalFace)
             }
@@ -790,18 +831,21 @@ struct Cube3DView: UIViewRepresentable {
                 return SelectedLayer(outer: normalFace)
             }
 
-            // 确定该 sticker 所在「轴」= sticker 法向所在的轴
-            // sticker 法向 = hit.face 决定：U/D → y 轴；R/L → x 轴；F/B → z 轴
-            // 该轴上 sticker 的 slice = 该 cubelet 在该轴上的坐标
-            let axis: SelectedLayer.Axis
-            let slice: Int
+            // 垂直于法向的两个轴坐标里，若恰有一个为 0（中央带）→ 选中层
             switch normalFace {
-            case .U, .D: axis = .y; slice = y
-            case .R, .L: axis = .x; slice = x
-            case .F, .B: axis = .z; slice = z
+            case .F, .B:   // 法向 z；看 x(→M)、y(→E)
+                if x == 0 { return SelectedLayer(axis: .x, slice: 0, normalFace: normalFace) }  // M 层
+                if y == 0 { return SelectedLayer(axis: .y, slice: 0, normalFace: normalFace) }  // E 层
+                return SelectedLayer(outer: normalFace)
+            case .U, .D:   // 法向 y；看 x(→M)、z(→S)
+                if x == 0 { return SelectedLayer(axis: .x, slice: 0, normalFace: normalFace) }  // M 层
+                if z == 0 { return SelectedLayer(axis: .z, slice: 0, normalFace: normalFace) }  // S 层
+                return SelectedLayer(outer: normalFace)
+            case .R, .L:   // 法向 x；看 y(→E)、z(→S)
+                if y == 0 { return SelectedLayer(axis: .y, slice: 0, normalFace: normalFace) }  // E 层
+                if z == 0 { return SelectedLayer(axis: .z, slice: 0, normalFace: normalFace) }  // S 层
+                return SelectedLayer(outer: normalFace)
             }
-
-            return SelectedLayer(axis: axis, slice: slice, normalFace: normalFace)
         }
 
         /// 滑动手势 → 该层的 Move。
@@ -968,8 +1012,8 @@ struct Cube3DView: UIViewRepresentable {
                 parent.addChildNode(n)
             }
 
-            // 对齐 sticker 朝向 + 在 +z 方向偏移 outlineZ
-            parent.eulerAngles = sticker.eulerAngles
+            // parent 作为 sticker 子节点，local 坐标天然随 sticker 朝向（贴纸平面 = local XY 平面）。
+            // 无需再设 eulerAngles，否则会与 sticker 的旋转叠加导致蓝框「立起来」。
             sticker.addChildNode(parent)
             highlightNodes[key] = parent
         }

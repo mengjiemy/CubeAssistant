@@ -196,7 +196,8 @@ struct HomeView: View {
                             },
                             onTurnRequest: { move in
                                 _ = session.apply(move)
-                            }
+                            },
+                            gestureInteractionEnabled: session.turnMode == .gestures
                         )
                             .frame(height: 280)
                             .clipShape(RoundedRectangle(cornerRadius: 24))
