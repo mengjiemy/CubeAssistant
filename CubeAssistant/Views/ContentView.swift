@@ -170,7 +170,7 @@ struct HomeView: View {
                 .frame(maxWidth: 220)
                 .tint(AppTheme.accent)
                 if session.turnMode == .gestures {
-                    Label("在魔方上左右滑", systemImage: "hand.draw")
+                    Label("点击选面，滑动转动", systemImage: "hand.draw")
                         .font(.caption2)
                         .foregroundColor(AppTheme.accent)
                 }
@@ -184,29 +184,17 @@ struct HomeView: View {
                     timingCard
 
                     ZStack(alignment: .topTrailing) {
-                        Cube3DView(session: session, selectedFace: selectedFace)
+                        Cube3DView(
+                            session: session,
+                            selectedFace: selectedFace,
+                            onFaceSelected: { selectedFace = $0 },
+                            onTurnRequest: { move in
+                                _ = session.apply(move)
+                            }
+                        )
                             .frame(height: 280)
                             .clipShape(RoundedRectangle(cornerRadius: 24))
                             .shadow(color: .black.opacity(0.4), radius: 20, x: 0, y: 10)
-                            // 手势模式：在魔方上左右滑 = 当前面顺/逆时针
-                            .overlay(
-                                GeometryReader { _ in
-                                    if session.turnMode == .gestures {
-                                        Color.clear
-                                            .contentShape(Rectangle())
-                                            .gesture(
-                                                DragGesture(minimumDistance: 28)
-                                                    .onEnded { v in
-                                                        let dx = v.translation.width
-                                                        let dy = v.translation.height
-                                                        guard abs(dx) > abs(dy), abs(dx) > 30 else { return }
-                                                        let clockwise = dx < 0   // 左滑=顺时针
-                                                        applyTurn(clockwise: clockwise)
-                                                    }
-                                            )
-                                    }
-                                }
-                            )
 
                         // 回正视角按钮（浮动于魔方右上角）
                         Button {
@@ -233,7 +221,9 @@ struct HomeView: View {
                         .padding(.horizontal, 20)
                         .frame(height: 20)
 
-                    turnControls
+                    if session.turnMode == .buttons {
+                        turnControls
+                    }
                     actionRow
                 }
                 .padding(.bottom, 40)

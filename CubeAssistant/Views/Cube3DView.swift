@@ -21,12 +21,23 @@ struct Cube3DView: UIViewRepresentable {
     var order: Int = 3
     /// 可选：选中的面（按钮高亮态或手势选层），对应 3D 魔方该面加高亮描边。
     var selectedFace: Face? = nil
+    /// 手势交互回调：点击某个 sticker 后选中对应面。
+    var onFaceSelected: ((Face) -> Void)? = nil
+    /// 手势交互回调：滑动触发一次 90° 转动请求。
+    var onTurnRequest: ((Move) -> Void)? = nil
 
-    init(session: CubeSession, overrideFacelets: [Int]? = nil, order: Int? = nil, selectedFace: Face? = nil) {
+    init(session: CubeSession,
+         overrideFacelets: [Int]? = nil,
+         order: Int? = nil,
+         selectedFace: Face? = nil,
+         onFaceSelected: ((Face) -> Void)? = nil,
+         onTurnRequest: ((Move) -> Void)? = nil) {
         self.session = session
         self.overrideFacelets = overrideFacelets
         self.order = order ?? session.order
         self.selectedFace = selectedFace
+        self.onFaceSelected = onFaceSelected
+        self.onTurnRequest = onTurnRequest
     }
 
     /// 解析本次要渲染的 facelets：优先 override；否则按当前阶数取 session 对应状态。
@@ -47,6 +58,8 @@ struct Cube3DView: UIViewRepresentable {
         let scene = SCNScene()
         scnView.scene = scene
         context.coordinator.scene = scene
+        context.coordinator.onFaceSelected = onFaceSelected
+        context.coordinator.onTurnRequest = onTurnRequest
         let initial = resolveFacelets()
         // 按阶数构建：2 阶走独立路径（8 块），3 阶走原路径（26 块），>=4 阶走高阶渲染
         if order == 2 {
@@ -102,6 +115,25 @@ struct Cube3DView: UIViewRepresentable {
         scene.rootNode.addChildNode(fill)
 
         context.coordinator.scnView = scnView
+
+        // 手势模式：点击选面 + 滑动转层（仅在提供了回调时启用）。
+        // 注意：手势识别器与 SCNView 内置相机控制（单指旋转视角）会竞争；
+        // 这里靠 hitTest 必须有魔方节点才响应，且滑动阈值足够大，避免误触发。
+        if onFaceSelected != nil || onTurnRequest != nil {
+            let tap = UITapGestureRecognizer(target: context.coordinator,
+                                             action: #selector(Coordinator.handleTap(_:)))
+            tap.delegate = context.coordinator
+            scnView.addGestureRecognizer(tap)
+            context.coordinator.tapGesture = tap
+
+            let pan = UIPanGestureRecognizer(target: context.coordinator,
+                                             action: #selector(Coordinator.handlePan(_:)))
+            pan.delegate = context.coordinator
+            pan.maximumNumberOfTouches = 1
+            scnView.addGestureRecognizer(pan)
+            context.coordinator.panGesture = pan
+        }
+
         return scnView
     }
 
@@ -159,7 +191,7 @@ struct Cube3DView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     // MARK: - Coordinator
-    final class Coordinator: NSObject {
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         var scene: SCNScene!
         weak var scnView: SCNView?
         /// 「默认视角」相机节点（reset 时的朝向参照）。注意：SCNView 启用
@@ -181,6 +213,14 @@ struct Cube3DView: UIViewRepresentable {
         var cubeNAllNodes: [SCNNode] = []
         /// facelet 索引 → 对应 sticker 节点（repaint 用）
         var cubeNStickers: [Int: SCNNode] = [:]
+        /// 手势交互回调
+        var onFaceSelected: ((Face) -> Void)?
+        var onTurnRequest: ((Move) -> Void)?
+        /// 手势识别器（用于 delegate / 复位）
+        weak var tapGesture: UITapGestureRecognizer?
+        weak var panGesture: UIPanGestureRecognizer?
+        /// 滑动手势起点命中到的面
+        private var panStartFace: Face? = nil
 
         /// 回正相机到默认视角（顶面朝上、前面朝前），按阶数调距离。
         /// 实现关键：SCNView 启用 allowsCameraControl 时，实际渲染的 pointOfView 由
@@ -201,6 +241,127 @@ struct Cube3DView: UIViewRepresentable {
             scnView.allowsCameraControl = true
             scnView.defaultCameraController.interactionMode = .orbitAngleMapping
             scnView.defaultCameraController.inertiaEnabled = true
+        }
+
+        // MARK: - 手势交互（手势模式）
+
+        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
+            guard let scnView = scnView else { return }
+            let point = gesture.location(in: scnView)
+            guard let face = faceAt(point: point, in: scnView) else { return }
+            onFaceSelected?(face)
+        }
+
+        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+            guard let scnView = scnView else { return }
+            let point = gesture.location(in: scnView)
+
+            switch gesture.state {
+            case .began:
+                panStartFace = faceAt(point: point, in: scnView)
+                gesture.setTranslation(.zero, in: scnView)
+            case .ended, .cancelled:
+                defer { panStartFace = nil }
+                guard let startFace = panStartFace else { return }
+                let translation = gesture.translation(in: scnView)
+                let dx = translation.x
+                let dy = translation.y
+                // 过滤过小的滑动，避免与相机旋转/惯性误判
+                guard max(abs(dx), abs(dy)) > 24 else { return }
+                guard let move = moveForSwipe(on: startFace, dx: dx, dy: dy) else { return }
+                onTurnRequest?(move)
+            default:
+                break
+            }
+        }
+
+        /// 把命中结果解析为面（2/3 阶读 sticker_xxx；高阶读 stickerN_idx）。
+        private func faceAt(point: CGPoint, in scnView: SCNView) -> Face? {
+            let hits = scnView.hitTest(point, options: [SCNHitTestOption.boundingBoxOnly: false])
+            guard let node = hits.first?.node else { return nil }
+
+            // 高阶 sticker 节点名 stickerN_idx
+            if let name = node.name, name.hasPrefix("stickerN_"),
+               let idx = Int(name.dropFirst("stickerN_".count)) {
+                let faceIdx = idx / (currentOrder * currentOrder)
+                guard faceIdx < Face.allCases.count else { return nil }
+                return Face(rawValue: faceIdx)
+            }
+
+            // 2/3 阶 sticker 节点名 sticker_px/nx/py/ny/pz/nz
+            if let name = node.name, name.hasPrefix("sticker_"),
+               let dir = FaceDir(rawValue: String(name.dropFirst("sticker_".count))) {
+                return faceFor(dir: dir)
+            }
+
+            // 命中到 cubelet 内芯：向上查 sticker 子节点（取第一个可见面）
+            if let parent = node.parent,
+               let sticker = parent.childNodes.first(where: { $0.name?.hasPrefix("sticker") == true }),
+               let name = sticker.name {
+                if name.hasPrefix("stickerN_"), let idx = Int(name.dropFirst("stickerN_".count)) {
+                    let faceIdx = idx / (currentOrder * currentOrder)
+                    return Face(rawValue: faceIdx)
+                }
+                if name.hasPrefix("sticker_"), let dir = FaceDir(rawValue: String(name.dropFirst("sticker_".count))) {
+                    return faceFor(dir: dir)
+                }
+            }
+            return nil
+        }
+
+        private func faceFor(dir: FaceDir) -> Face {
+            switch dir {
+            case .py: return .U
+            case .ny: return .D
+            case .nx: return .L
+            case .px: return .R
+            case .pz: return .F
+            case .nz: return .B
+            }
+        }
+
+        /// 根据起点面和滑动方向生成一次 90° 转动。
+        /// 规则：点击选面后，在该面上沿主方向滑动；右/上=顺时针，左/下=逆时针。
+        private func moveForSwipe(on face: Face, dx: CGFloat, dy: CGFloat) -> Move? {
+            let horizontal = abs(dx) >= abs(dy)
+            let clockwise: Bool
+            if horizontal {
+                clockwise = dx > 0
+            } else {
+                clockwise = dy < 0
+            }
+            switch (face, clockwise) {
+            case (.U, true):  return .U
+            case (.U, false): return .Up
+            case (.D, true):  return .D
+            case (.D, false): return .Dp
+            case (.L, true):  return .L
+            case (.L, false): return .Lp
+            case (.R, true):  return .R
+            case (.R, false): return .Rp
+            case (.F, true):  return .F
+            case (.F, false): return .Fp
+            case (.B, true):  return .B
+            case (.B, false): return .Bp
+            }
+        }
+
+        // MARK: - UIGestureRecognizerDelegate
+
+        /// 允许手势识别器与 SCNView 内置相机控制同时生效：
+        /// 只有当命中到魔方节点时才由本 Coordinator 处理，否则交给 SCNView。
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldReceive touch: UITouch) -> Bool {
+            guard let scnView = scnView else { return false }
+            let point = touch.location(in: scnView)
+            let hits = scnView.hitTest(point, options: [SCNHitTestOption.boundingBoxOnly: false])
+            return hits.first != nil
+        }
+
+        /// 允许 tap 与 pan 同时识别（tap 选面，pan 转层）。
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            return true
         }
 
         /// 标准魔方配色（stickerless，与 facelet 颜色 id 严格对应）
@@ -592,28 +753,22 @@ struct Cube3DView: UIViewRepresentable {
                 }
                 return
             }
-            // 该方向上的 cubelet 集合（按阶数分派）
-            let targets: [SCNNode]
-            if currentOrder == 2 {
-                targets = cubelets2x2.values.filter { $0.childNode(withName: "sticker_\(dir.rawValue)", recursively: false) != nil }
-            } else {
-                targets = cubelets.values.filter { $0.childNode(withName: "sticker_\(dir.rawValue)", recursively: false) != nil }
-            }
-            for node in targets {
-                // 描边：稍大一点的 wireframe box，框住 cubelet
-                let outline = SCNBox(width: 1.0, height: 1.0, length: 1.0, chamferRadius: 0.04)
+            // 2/3 阶：同样用 sticker overlay，避免 box 产生的阴影/脏边
+            let source = currentOrder == 2 ? cubelets2x2 : cubelets
+            for (key, node) in source {
+                guard let sticker = node.childNode(withName: "sticker_\(dir.rawValue)", recursively: false) else { continue }
+                let overlay = SCNPlane(width: 0.86, height: 0.86)
                 let m = SCNMaterial()
                 m.diffuse.contents = highlightColor
                 m.lightingModel = .constant   // 不受光照影响，恒亮
-                m.transparency = 0.45
-                outline.materials = [m]
-                let outlineNode = SCNNode(geometry: outline)
-                outlineNode.name = "highlight_outline"
-                node.addChildNode(outlineNode)
-                if let key = node.name?.replacingOccurrences(of: "cubelet_", with: "")
-                                    .replacingOccurrences(of: "cubelet2_", with: "") {
-                    highlightNodes[key + "_" + dir.rawValue] = outlineNode
-                }
+                m.isDoubleSided = true
+                overlay.materials = [m]
+                let overlayNode = SCNNode(geometry: overlay)
+                overlayNode.name = "highlight_overlay"
+                overlayNode.position = SCNVector3(0, 0, 0.02)
+                sticker.addChildNode(overlayNode)
+                // 原始 key 可能含 +/-/下划线，直接拼接可保证唯一性
+                highlightNodes[key + "_" + dir.rawValue] = overlayNode
             }
         }
     }
