@@ -77,16 +77,30 @@ struct Cube3DView: UIViewRepresentable {
         /// 该层对应的「基础 move」（CW 90°）。
         /// 例如：x 轴 +1 层 → R，x 轴 0 层（中层）→ M，y 轴 +1 层 → U
         var baseMove: Move {
-            switch (axis, slice) {
-            case (Axis.x,  1): return .R
-            case (Axis.x,  0): return .M
-            case (Axis.x, -1): return .L
-            case (Axis.y,  1): return .U
-            case (Axis.y,  0): return .E
-            case (Axis.y, -1): return .D
-            case (Axis.z,  1): return .F
-            case (Axis.z,  0): return .S
-            case (Axis.z, -1): return .B
+            let ax = self.axis
+            let sl = self.slice
+            switch ax {
+            case .x:
+                switch sl {
+                case  1: return .R
+                case  0: return .M
+                case -1: return .L
+                default: return .R
+                }
+            case .y:
+                switch sl {
+                case  1: return .U
+                case  0: return .E
+                case -1: return .D
+                default: return .U
+                }
+            case .z:
+                switch sl {
+                case  1: return .F
+                case  0: return .S
+                case -1: return .B
+                default: return .F
+                }
             }
         }
 
