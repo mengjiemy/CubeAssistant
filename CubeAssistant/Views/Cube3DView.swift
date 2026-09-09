@@ -674,9 +674,20 @@ struct Cube3DView: UIViewRepresentable {
                 (dir: (-1, 0, 0), axA: (0, 0, 1), axB: (0, -1, 0)),   // L: c→+z,  r→-y
                 (dir: (0, 0, -1), axA: (-1, 0, 0), axB: (0, -1, 0)),  // B: c→-x,  r→-y
             ]
+            // 每个面的贴纸朝向：与 2/3 阶 addSticker 的 FaceDir 完全一致（精确 eulerAngles，
+            // 无 look(at:) 的 roll 歧义）。f=0..5 → U,R,F,D,L,B → py,px,pz,ny,nx,nz。
+            let faceEulers: [SCNVector3] = [
+                SCNVector3(-Float.pi / 2, 0, 0),   // U 面（法向 +y）
+                SCNVector3(0, Float.pi / 2, 0),    // R 面（法向 +x）
+                SCNVector3(0, 0, 0),               // F 面（法向 +z）
+                SCNVector3(Float.pi / 2, 0, 0),    // D 面（法向 -y）
+                SCNVector3(0, -Float.pi / 2, 0),   // L 面（法向 -x）
+                SCNVector3(0, Float.pi, 0),        // B 面（法向 -z）
+            ]
             let perFace = N * N
             for f in 0..<6 {
                 let spec = faces[f]
+                let euler = faceEulers[f]
                 for r in 0..<N {
                     for c in 0..<N {
                         let idx = f * perFace + r * N + c
@@ -686,7 +697,8 @@ struct Cube3DView: UIViewRepresentable {
                         mat.lightingModel = .physicallyBased
                         mat.roughness.contents = 0.35
                         mat.metalness.contents = 0.0
-                        mat.isDoubleSided = true
+                        // 单面（与 2/3 阶一致）：法向已精确朝外，双面反而致背面光照异常
+                        mat.isDoubleSided = false
                         plane.materials = [mat]
                         let node = SCNNode(geometry: plane)
                         node.name = "stickerN_\(idx)"
@@ -697,11 +709,8 @@ struct Cube3DView: UIViewRepresentable {
                             spec.dir.1 * normalDistance + spec.axA.1 * u + spec.axB.1 * v,
                             spec.dir.2 * normalDistance + spec.axA.2 * u + spec.axB.2 * v)
                         node.position = pos
-                        // SCNNode.look(at:) 让节点的 -z 朝 target；要让 plane 法向（+z）朝外，
-                        // target 必须在外法向的反方向（魔方内部）。
-                        node.look(at: SCNVector3(-spec.dir.0 * (halfExtent * 3),
-                                                 -spec.dir.1 * (halfExtent * 3),
-                                                 -spec.dir.2 * (halfExtent * 3)))
+                        // 精确朝向：贴纸法向朝外（沿 dir），面内朝向确定（无 look(at:) roll 歧义）
+                        node.eulerAngles = euler
                         scene.rootNode.addChildNode(node)
                         cubeNAllNodes.append(node)
                         cubeNStickers[idx] = node
