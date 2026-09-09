@@ -522,6 +522,8 @@ struct LearnView: View {
     @ObservedObject var session: CubeSession
     /// 当前点开的课程（点开弹课程详情 sheet）
     @State private var selectedCourse: CourseStage? = nil
+    /// 进度刷新触发器（sheet 关闭后递增，强制 currentCourses 重新读 UserDefaults）
+    @State private var progressRefreshToken: Int = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -659,7 +661,11 @@ struct LearnView: View {
     }
 
     /// 当前阶数对应的课程（原型：学习中心课程跟随阶数）
-    private var currentCourses: [CourseStage] { CourseStage.courses(for: session.order) }
+    /// 依赖 progressRefreshToken：sheet 关闭后递增 → 强制重新读 UserDefaults。
+    private var currentCourses: [CourseStage] {
+        _ = progressRefreshToken
+        return CourseStage.courses(for: session.order)
+    }
 
     /// 基础课程骨架：分阶段标题 + 说明（图文教学后续版本完善）。课程按当前阶数切换。
     private var courseSection: some View {
@@ -778,7 +784,13 @@ struct LearnView: View {
                 var map = (UserDefaults.standard.dictionary(forKey: "cube_course_progress") as? [String: Double]) ?? [:]
                 map[stage.idKey] = newProgress
                 UserDefaults.standard.set(map, forKey: "cube_course_progress")
+                // 立即刷新 LearnView 列表（让 stage.progress 重新读 UserDefaults）
+                progressRefreshToken += 1
             }
+        }
+        // sheet 关闭后兜底再刷一次（dismiss → selectedCourse=nil → 触发 currentCourses 重算）
+        .onChange(of: selectedCourse) { newValue in
+            if newValue == nil { progressRefreshToken += 1 }
         }
     }
 
@@ -1377,7 +1389,6 @@ struct CourseDetailSheet: View {
     let onProgressUpdate: (Double) -> Void
     @Environment(\.dismiss) private var dismiss
 
-    @State private var currentProgress: Double = 0
     @State private var isFavorited: Bool = false
 
     var body: some View {
@@ -1432,46 +1443,31 @@ struct CourseDetailSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
 
-                    // 进度条 + 标记完成按钮
+                    // 课程状态（只有"未学"/"已完成"两态，因为每课只有一页，没必要按 0~100% 慢慢拨）
                     VStack(spacing: 10) {
                         HStack {
-                            Text("学习进度").font(.caption).foregroundColor(.secondary)
+                            Text(stage.progress >= 1 ? "✓ 已完成" : "未开始")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundColor(stage.progress >= 1 ? .green : .secondary)
                             Spacer()
-                            Text("\(Int(currentProgress * 100))%").font(.caption.weight(.semibold)).foregroundColor(stage.statusColor)
                         }
-                        ProgressView(value: currentProgress)
-                            .tint(stage.statusColor)
-                        HStack(spacing: 10) {
-                            Button {
-                                currentProgress = max(0, currentProgress - 0.1)
-                                onProgressUpdate(currentProgress)
-                            } label: {
-                                Label("退一格", systemImage: "arrow.uturn.backward")
-                                    .font(.subheadline.weight(.semibold))
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 10)
-                                    .background(Capsule().fill(.ultraThinMaterial))
-                                    .foregroundColor(.white)
+                        Button {
+                            let newProgress: Double = (stage.progress >= 1) ? 0 : 1
+                            onProgressUpdate(newProgress)
+                            if newProgress >= 1 {
+                                // 标记完成 → 自动关闭 sheet
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { dismiss() }
                             }
-                            .buttonStyle(.plain)
-                            Button {
-                                if currentProgress < 1 { currentProgress = 1 } else { currentProgress = 0 }
-                                onProgressUpdate(currentProgress)
-                                if currentProgress >= 1 {
-                                    // 完成后自动关闭
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { dismiss() }
-                                }
-                            } label: {
-                                Label(currentProgress >= 1 ? "重学" : "标记完成",
-                                      systemImage: currentProgress >= 1 ? "arrow.counterclockwise" : "checkmark.circle.fill")
-                                    .font(.subheadline.weight(.semibold))
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 10)
-                                    .background(Capsule().fill(stage.statusColor))
-                                    .foregroundColor(.white)
-                            }
-                            .buttonStyle(.plain)
+                        } label: {
+                            Label(stage.progress >= 1 ? "重学" : "标记完成",
+                                  systemImage: stage.progress >= 1 ? "arrow.counterclockwise" : "checkmark.circle.fill")
+                                .font(.subheadline.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Capsule().fill(stage.progress >= 1 ? Color.white.opacity(0.18) : stage.color))
+                                .foregroundColor(.white)
                         }
+                        .buttonStyle(.plain)
                     }
                     .padding(14)
                     .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
@@ -1499,7 +1495,6 @@ struct CourseDetailSheet: View {
                 }
             }
             .onAppear {
-                currentProgress = stage.progress
                 isFavorited = stage.isFavorite
             }
         }

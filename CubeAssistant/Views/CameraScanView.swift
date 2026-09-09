@@ -25,22 +25,8 @@ struct CameraScanView: View {
     @State private var showConfirm: Bool = false
     /// 弹出来源选择（相机/相册）
     @State private var showSourceChoice: Bool = false
-    /// 弹出色盘（编辑屏用）
-    @State private var showColorSheet: Bool = false
-    @State private var editingCell: Int? = nil
-    /// 提示文案
-    @State private var note: String = "选择一面，按提示拍/选照片，自动识别 9 个贴纸颜色"
 
     private let faceOrder: [Face] = [.U, .R, .F, .D, .L, .B]
-    private let faceLabel: [Face: String] = [.U: "上 U", .R: "右 R", .F: "前 F", .D: "下 D", .L: "左 L", .B: "后 B"]
-    private let faceHint: [Face: String] = [
-        .U: "白色面朝上，让整个顶面进取景框",
-        .R: "把右面正对镜头，与顶面交界朝上",
-        .F: "绿色面朝你，白色面朝上",
-        .D: "黄色面朝下（把魔方翻过来），拍摄底面",
-        .L: "把左面正对镜头，与顶面交界朝上",
-        .B: "蓝色面朝你（前面在对面），与顶面交界朝上"
-    ]
 
     init(session: CubeSession) { self.session = session }
 
@@ -96,18 +82,15 @@ struct CameraScanView: View {
         }
         .sheet(isPresented: $showConfirm) {
             ConfirmCubeView(session: session, faces: $faces, currentFace: currentFace) {
-                // 完成识别：把 faces 拼成 54 色，调 session.setFacelets + 关闭
+                // 完成识别：把 faces 拼成 54 色，调 session.setFacelets。
+                // 返回 true = 录入成功（sheet 自动关闭）；false = 失败（sheet 内显示原因）。
                 var all: [Int] = []
                 for f in faceOrder {
-                    guard let arr = faces[f] else { return }
+                    guard let arr = faces[f] else { return false }
                     all.append(contentsOf: arr)
                 }
-                if session.setFacelets(all) {
-                    showConfirm = false
-                    dismiss()
-                } else {
-                    note = "状态非法，请检查各面颜色是否准确（每色应 9 个）"
-                }
+                if session.setFacelets(all) { return true }
+                return false
             }
         }
     }
@@ -121,75 +104,27 @@ struct CameraScanView: View {
     }
 
     // MARK: - 顶部引导卡
+    /// 极简引导：进度 + 一句话提示，不再按 U/R/F/D/L/B 分面拍。
     private var guideCard: some View {
         let doneCount = faceOrder.filter { faces[$0] != nil }.count
-        let stepTag = "第 \(doneCount + (faces[currentFace] == nil ? 1 : 0)) 面 / 共 6 面"
-        let next = faceOrder.first { faces[$0] == nil } ?? currentFace
-        return VStack(alignment: .leading, spacing: 10) {
-            // 步骤标
+        let stepTag = "第 \(doneCount + (faces[currentFace] == nil ? 1 : 0)) / 6 面"
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(stepTag)
                     .font(.caption.weight(.semibold))
                     .foregroundColor(AppTheme.accent)
                 Spacer()
             }
-            // 面名
-            Text(faceLabel[next] ?? "")
+            Text("拍魔方的一面")
                 .font(.title2.weight(.bold))
                 .foregroundColor(.white)
-            // 引导语
-            Text(faceHint[next] ?? "")
+            Text("任意一面都行，App 自动识别 9 个贴纸颜色；拍 6 张即可")
                 .font(.caption)
                 .foregroundColor(.white.opacity(0.7))
-            // 中心块 mini-cube（3×3 占位，中间"＋"标注中心块）
-            miniCubePreview(face: next)
-                .frame(maxWidth: .infinity)
-            // 中心提示
-            Text("中间「＋」是中心块，颜色以它为准")
-                .font(.caption2)
-                .foregroundColor(.secondary)
         }
         .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 18).fill(.ultraThinMaterial))
-    }
-
-    /// 3×3 mini-cube 占位（中间显示「＋」表示中心块）
-    private func miniCubePreview(face: Face) -> some View {
-        let stickerColor: (Int) -> Color = { id in
-            let refs: [Color] = [
-                Color(red: 0.92, green: 0.92, blue: 0.92),  // 白
-                Color(red: 0.78, green: 0.16, blue: 0.16),  // 红
-                Color(red: 0.16, green: 0.55, blue: 0.27),  // 绿
-                Color(red: 0.96, green: 0.84, blue: 0.12),  // 黄
-                Color(red: 0.96, green: 0.55, blue: 0.10),  // 橙
-                Color(red: 0.12, green: 0.31, blue: 0.72)   // 蓝
-            ]
-            return refs[id]
-        }
-        // 已识别的面用真色块，否则用该面的标准色占位（中心块特殊处理）
-        let faceSticker: Int? = (faces[face] != nil) ? faces[face]?[4] : FaceColorRef[face]
-        let centerColor = stickerColor(faceSticker ?? 0)
-        return VStack(spacing: 3) {
-            ForEach(0..<3, id: \.self) { r in
-                HStack(spacing: 3) {
-                    ForEach(0..<3, id: \.self) { c in
-                        let isCenter = (r == 1 && c == 1)
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(centerColor.opacity(isCenter ? 1.0 : 0.18))
-                            if isCenter {
-                                Image(systemName: "plus")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundColor(.black.opacity(0.6))
-                            }
-                        }
-                        .frame(height: 30)
-                    }
-                }
-            }
-        }
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
     }
 
     // MARK: - 进度条
@@ -271,14 +206,11 @@ struct CameraScanView: View {
                             .foregroundColor(.white.opacity(0.3))
                     }
                 }
-                .frame(height: 56)
+                .aspectRatio(1, contentMode: .fit)   // 缩略图保持正方形
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
                         .stroke(current ? AppTheme.accent : (done ? Color.green : Color.clear), lineWidth: 2)
                 )
-                Text(faceLabel[face] ?? "")
-                    .font(.caption2)
-                    .foregroundColor(current ? AppTheme.accent : .secondary)
             }
         }
         .buttonStyle(.plain)
@@ -288,12 +220,12 @@ struct CameraScanView: View {
     private var scanOptions: some View {
         VStack(spacing: 10) {
             scanOptionCard(icon: "camera.fill", iconGradient: [AppTheme.accent, AppTheme.accentLight],
-                           title: "拍摄「\(faceLabel[currentFace] ?? "")」",
-                           desc: "打开相机实时框选当前面",
+                           title: "拍照",
+                           desc: "打开相机拍魔方一面",
                            action: { showSourceChoice = true })
             scanOptionCard(icon: "photo.on.rectangle", iconGradient: [Color.purple, Color.pink],
                            title: "从相册选择",
-                           desc: "从已有照片选当前面",
+                           desc: "从已有照片选一面",
                            action: { showSourceChoice = true })
         }
     }
@@ -418,18 +350,19 @@ struct ConfirmCubeView: View {
     @ObservedObject var session: CubeSession
     @Binding var faces: [Face: [Int]]
     let initialFace: Face
-    let onFinish: () -> Void
+    /// 完成识别回调：返回 true = 录入成功（外部会自动关闭 sheet），false = 失败（外部会在 errorMessage 显示原因）
+    let onFinish: () -> Bool
 
     @State private var currentFace: Face = .U
     @State private var draft: [Int]? = nil   // 当前面草稿（编辑态）
-    @State private var showColorSheet: Bool = false
-    @State private var editingCell: Int? = nil
-    @State private var note: String = "扫描完成，点方块可改色，改到和手里一样"
+    @State private var editingCell: Int? = nil   // 正在编辑的格子 idx
+    @State private var errorMessage: String? = nil   // 校验/识别失败时的提示
+    @State private var note: String = "扫描完成，先点要改的方块，再点下方颜色"
 
     private let faceOrder: [Face] = [.U, .R, .F, .D, .L, .B]
     private let faceLabel: [Face: String] = [.U: "上", .R: "右", .F: "前", .D: "下", .L: "左", .B: "后"]
 
-    init(session: CubeSession, faces: Binding<[Face: [Int]]>, currentFace: Face, onFinish: @escaping () -> Void) {
+    init(session: CubeSession, faces: Binding<[Face: [Int]]>, currentFace: Face, onFinish: @escaping () -> Bool) {
         self.session = session
         self._faces = faces
         self.initialFace = currentFace
@@ -490,16 +423,17 @@ struct ConfirmCubeView: View {
                             HStack(spacing: 6) {
                                 ForEach(0..<3, id: \.self) { c in
                                     let idx = r * 3 + c
+                                    let isEditing = (editingCell == idx)
                                     Button {
                                         editingCell = idx
-                                        showColorSheet = true
                                     } label: {
                                         RoundedRectangle(cornerRadius: 8)
                                             .fill(stickerColor(d[idx]))
                                             .frame(height: 64)
                                             .overlay(
                                                 RoundedRectangle(cornerRadius: 8)
-                                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                                    .stroke(isEditing ? AppTheme.accent : Color.white.opacity(0.2),
+                                                            lineWidth: isEditing ? 3 : 1)
                                             )
                                     }
                                     .buttonStyle(.plain)
@@ -512,9 +446,11 @@ struct ConfirmCubeView: View {
                     .padding(.horizontal, 20)
                 }
 
-                Text("点方块 → 选颜色")
+                Text(editingCell == nil
+                     ? "先点要改的方块，再点下方颜色"
+                     : "已选 1 格，点下方颜色应用")
                     .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(editingCell == nil ? .secondary : AppTheme.accent)
 
                 // 6 色调色盘（始终显示，方便快速改色）
                 HStack(spacing: 10) {
@@ -532,6 +468,8 @@ struct ConfirmCubeView: View {
                             if let idx = editingCell {
                                 draft?[idx] = id
                                 editingCell = nil
+                            } else {
+                                note = "先点 3×3 网格里要改的格子"
                             }
                         }
                     }
@@ -540,10 +478,28 @@ struct ConfirmCubeView: View {
 
                 Spacer()
 
+                // 失败提示（仅在 errorMessage 有值时显示）
+                if let err = errorMessage {
+                    Text(err)
+                        .font(.caption.weight(.semibold))
+                        .foregroundColor(.red)
+                        .padding(.horizontal, 20)
+                }
+
                 // 底部"完成识别"主按钮
                 Button {
                     saveDraft()
-                    onFinish()
+                    if onFinish() {
+                        dismiss()
+                    } else {
+                        // 检查 6 面是否都拍过，给出对应错误
+                        let missing = faceOrder.filter { faces[$0] == nil }
+                        if !missing.isEmpty {
+                            errorMessage = "还有 \(missing.count) 个面没拍，回到上一步补拍"
+                        } else {
+                            errorMessage = "颜色校验未通过：每个面应有 9 个同色贴纸，且 6 色各 9 个"
+                        }
+                    }
                 } label: {
                     Label("完成识别", systemImage: "wand.and.stars")
                         .font(.subheadline.weight(.semibold))
@@ -571,37 +527,7 @@ struct ConfirmCubeView: View {
                 currentFace = initialFace
                 draft = faces[currentFace]
             }
-            .sheet(isPresented: $showColorSheet) {
-                colorPickerSheet
-                    .presentationDetents([.height(220)])
-            }
         }
-        .preferredColorScheme(.dark)
-    }
-
-    private var colorPickerSheet: some View {
-        VStack(spacing: 16) {
-            Text("选择颜色").font(.headline).foregroundColor(.white)
-            HStack(spacing: 12) {
-                ForEach(0..<6, id: \.self) { id in
-                    Button {
-                        if let idx = editingCell { draft?[idx] = id }
-                        showColorSheet = false
-                    } label: {
-                        VStack(spacing: 4) {
-                            RoundedRectangle(cornerRadius: 6).fill(stickerColor(id))
-                                .frame(width: 44, height: 44)
-                                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.2)))
-                            Text(["白","红","绿","黄","橙","蓝"][id]).font(.caption2).foregroundColor(.secondary)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            Spacer()
-        }
-        .padding(.top, 20)
-        .background(Color(red: 0.04, green: 0.04, blue: 0.08).ignoresSafeArea())
         .preferredColorScheme(.dark)
     }
 
