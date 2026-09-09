@@ -47,6 +47,10 @@ struct Cube3DView: UIViewRepresentable {
         let slice: Int
         let normalFace: Face
 
+        init(axis: Axis, slice: Int, normalFace: Face) {
+            self.axis = axis; self.slice = slice; self.normalFace = normalFace
+        }
+
         /// 由外层 face 构造（高阶/按钮模式用）。slice 用归一化坐标 ±1。
         init(outer face: Face) {
             switch face {
