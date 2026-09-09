@@ -960,7 +960,8 @@ struct LearnView: View {
 }
 
 /// 课程阶段（骨架定义）
-struct CourseStage: Identifiable {
+struct CourseStage: Identifiable, Equatable {
+    static func == (lhs: CourseStage, rhs: CourseStage) -> Bool { lhs.idKey == rhs.idKey }
     let id: Int
     let order: Int
     let title: String
