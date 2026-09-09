@@ -19,49 +19,25 @@ struct Cube3DView: UIViewRepresentable {
     /// 渲染阶数：3=3阶(26块/每面9格)，2=2阶(8块/每面4格)。
     /// 默认取 session 当前阶数；独立传入时(如无 session 的场景)可显式指定。
     var order: Int = 3
-    /// 可选：选中的层切片（按钮高亮态或手势选层），高亮覆盖该层全部 stickers。
-    var selectedLayer: SelectedLayer? = nil
-    /// 手势交互回调：点击某个 sticker 后选中对应层。
-    var onLayerSelected: ((SelectedLayer) -> Void)? = nil
+    /// 可选：选中的外层（按钮高亮态或手势选层），对应整层切片加蓝框描边。
+    var selectedFace: Face? = nil
+    /// 手势交互回调：点击某个 sticker 后选中该 sticker 所在外层（U/R/F/D/L/B）。
+    var onFaceSelected: ((Face) -> Void)? = nil
     /// 手势交互回调：滑动触发一次 90° 转动请求。
     var onTurnRequest: ((Move) -> Void)? = nil
 
     init(session: CubeSession,
          overrideFacelets: [Int]? = nil,
          order: Int? = nil,
-         selectedLayer: SelectedLayer? = nil,
-         onLayerSelected: ((SelectedLayer) -> Void)? = nil,
+         selectedFace: Face? = nil,
+         onFaceSelected: ((Face) -> Void)? = nil,
          onTurnRequest: ((Move) -> Void)? = nil) {
         self.session = session
         self.overrideFacelets = overrideFacelets
         self.order = order ?? session.order
-        self.selectedLayer = selectedLayer
-        self.onLayerSelected = onLayerSelected
+        self.selectedFace = selectedFace
+        self.onFaceSelected = onFaceSelected
         self.onTurnRequest = onTurnRequest
-    }
-
-    /// 一个层切片：轴 + 切片坐标 + 命中面法向（决定滑动方向观察基准）。
-    struct SelectedLayer: Equatable, Hashable {
-        enum Axis: Int, Equatable, Hashable { case x, y, z }
-        let axis: Axis
-        let slice: Int
-        let normalFace: Face
-
-        init(axis: Axis, slice: Int, normalFace: Face) {
-            self.axis = axis; self.slice = slice; self.normalFace = normalFace
-        }
-
-        /// 由外层 face 构造（高阶/按钮模式用）。slice 用归一化坐标 ±1。
-        init(outer face: Face) {
-            switch face {
-            case .U: self.init(axis: .y, slice: 1, normalFace: .U)
-            case .D: self.init(axis: .y, slice: -1, normalFace: .D)
-            case .R: self.init(axis: .x, slice: 1, normalFace: .R)
-            case .L: self.init(axis: .x, slice: -1, normalFace: .L)
-            case .F: self.init(axis: .z, slice: 1, normalFace: .F)
-            case .B: self.init(axis: .z, slice: -1, normalFace: .B)
-            }
-        }
     }
 
     /// 解析本次要渲染的 facelets：优先 override；否则按当前阶数取 session 对应状态。
@@ -82,7 +58,7 @@ struct Cube3DView: UIViewRepresentable {
         let scene = SCNScene()
         scnView.scene = scene
         context.coordinator.scene = scene
-        context.coordinator.onLayerSelected = onLayerSelected
+        context.coordinator.onFaceSelected = onFaceSelected
         context.coordinator.onTurnRequest = onTurnRequest
         let initial = resolveFacelets()
         // 按阶数构建：2 阶走独立路径（8 块），3 阶走原路径（26 块），>=4 阶走高阶渲染
@@ -140,10 +116,10 @@ struct Cube3DView: UIViewRepresentable {
 
         context.coordinator.scnView = scnView
 
-        // 手势模式：点击选面 + 滑动转层（仅在提供了回调时启用）。
+        // 手势模式：点击选外层 + 滑动转该层（仅在提供了回调时启用）。
         // 注意：手势识别器与 SCNView 内置相机控制（单指旋转视角）会竞争；
         // 这里靠 hitTest 必须有魔方节点才响应，且滑动阈值足够大，避免误触发。
-        if onLayerSelected != nil || onTurnRequest != nil {
+        if onFaceSelected != nil || onTurnRequest != nil {
             let tap = UITapGestureRecognizer(target: context.coordinator,
                                              action: #selector(Coordinator.handleTap(_:)))
             tap.delegate = context.coordinator
@@ -189,9 +165,9 @@ struct Cube3DView: UIViewRepresentable {
             co.resetCamera()  // 阶数切换后回正视角到对应距离
             return
         }
-        // 选层高亮变化：重画高亮（不做几何变更）
-        if selectedLayer != co.currentHighlightLayer {
-            co.applyHighlight(layer: selectedLayer)
+        // 选面高亮变化：重画高亮（不做几何变更）
+        if selectedFace != co.currentHighlightFace {
+            co.applyHighlight(face: selectedFace)
         }
         let facelets = resolveFacelets()
         guard facelets != co.lastFacelets else { return }
@@ -228,9 +204,9 @@ struct Cube3DView: UIViewRepresentable {
         var lastCameraResetToken: Int = 0
         /// 当前渲染阶数（3/2），buildCube 时设定，驱动 applyFacelets 分派与相机距离
         var currentOrder = 3
-        /// 当前选中的层（用于 3D 魔方高亮）
-        var currentHighlightLayer: SelectedLayer? = nil
-        /// 高亮描边节点集合（key = cubelet key + sticker name）
+        /// 当前选中的面（用于 3D 魔方高亮）
+        var currentHighlightFace: Face? = nil
+        /// 高亮节点集合（key = sticker 节点 name）
         var highlightNodes: [String: SCNNode] = [:]
         /// —— 高阶（4~10）渲染节点 ——
         /// N 阶魔方所有已建节点（便于整体拆除重建）
@@ -238,13 +214,13 @@ struct Cube3DView: UIViewRepresentable {
         /// facelet 索引 → 对应 sticker 节点（repaint 用）
         var cubeNStickers: [Int: SCNNode] = [:]
         /// 手势交互回调
-        var onLayerSelected: ((SelectedLayer) -> Void)?
+        var onFaceSelected: ((Face) -> Void)?
         var onTurnRequest: ((Move) -> Void)?
         /// 手势识别器（用于 delegate / 复位）
         weak var tapGesture: UITapGestureRecognizer?
         weak var panGesture: UIPanGestureRecognizer?
-        /// 滑动手势起点命中到的层
-        private var panStartLayer: SelectedLayer? = nil
+        /// 滑动手势起点命中到的面
+        private var panStartFace: Face? = nil
 
         /// 回正相机到默认视角（顶面朝上、前面朝前），按阶数调距离。
         /// 实现关键：SCNView 启用 allowsCameraControl 时，实际渲染的 pointOfView 由
@@ -272,8 +248,8 @@ struct Cube3DView: UIViewRepresentable {
         @objc func handleTap(_ gesture: UITapGestureRecognizer) {
             guard let scnView = scnView else { return }
             let point = gesture.location(in: scnView)
-            guard let layer = layerAt(point: point, in: scnView) else { return }
-            onLayerSelected?(layer)
+            guard let face = faceAt(point: point, in: scnView) else { return }
+            onFaceSelected?(face)
         }
 
         @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
@@ -282,42 +258,40 @@ struct Cube3DView: UIViewRepresentable {
 
             switch gesture.state {
             case .began:
-                panStartLayer = layerAt(point: point, in: scnView)
+                panStartFace = faceAt(point: point, in: scnView)
                 gesture.setTranslation(.zero, in: scnView)
             case .ended, .cancelled:
-                defer { panStartLayer = nil }
-                guard let startLayer = panStartLayer else { return }
+                defer { panStartFace = nil }
+                guard let startFace = panStartFace else { return }
                 let translation = gesture.translation(in: scnView)
                 let dx = translation.x
                 let dy = translation.y
                 // 过滤过小的滑动，避免与相机旋转/惯性误判
                 guard max(abs(dx), abs(dy)) > 24 else { return }
-                guard let move = moveForSwipe(on: startLayer, dx: dx, dy: dy) else { return }
+                guard let move = moveForSwipe(on: startFace, dx: dx, dy: dy) else { return }
                 onTurnRequest?(move)
             default:
                 break
             }
         }
 
-        /// 把命中结果解析为层（2/3 阶读 sticker_xxx + cubelet 坐标；高阶读 stickerN_idx 并退化到命中的外层）。
-        private func layerAt(point: CGPoint, in scnView: SCNView) -> SelectedLayer? {
+        /// 把命中结果解析为面（2/3 阶读 sticker_xxx；高阶读 stickerN_idx）。
+        private func faceAt(point: CGPoint, in scnView: SCNView) -> Face? {
             let hits = scnView.hitTest(point, options: [SCNHitTestOption.boundingBoxOnly: false])
             guard let node = hits.first?.node else { return nil }
 
-            // 高阶 sticker 节点名 stickerN_idx：退化到命中的外层
+            // 高阶 sticker 节点名 stickerN_idx
             if let name = node.name, name.hasPrefix("stickerN_"),
                let idx = Int(name.dropFirst("stickerN_".count)) {
                 let faceIdx = idx / (currentOrder * currentOrder)
-                guard faceIdx < Face.allCases.count, let face = Face(rawValue: faceIdx) else { return nil }
-                return SelectedLayer(outer: face)
+                guard faceIdx < Face.allCases.count else { return nil }
+                return Face(rawValue: faceIdx)
             }
 
             // 2/3 阶 sticker 节点名 sticker_px/nx/py/ny/pz/nz
             if let name = node.name, name.hasPrefix("sticker_"),
-               let dir = FaceDir(rawValue: String(name.dropFirst("sticker_".count))),
-               let coords = cubeletCoordinates(for: node) {
-                let face = faceFor(dir: dir)
-                return layerFor(coords: coords, face: face)
+               let dir = FaceDir(rawValue: String(name.dropFirst("sticker_".count))) {
+                return faceFor(dir: dir)
             }
 
             // 命中到 cubelet 内芯：向上查 sticker 子节点（取第一个可见面）
@@ -326,13 +300,10 @@ struct Cube3DView: UIViewRepresentable {
                let name = sticker.name {
                 if name.hasPrefix("stickerN_"), let idx = Int(name.dropFirst("stickerN_".count)) {
                     let faceIdx = idx / (currentOrder * currentOrder)
-                    guard faceIdx < Face.allCases.count, let face = Face(rawValue: faceIdx) else { return nil }
-                    return SelectedLayer(outer: face)
+                    return Face(rawValue: faceIdx)
                 }
-                if name.hasPrefix("sticker_"), let dir = FaceDir(rawValue: String(name.dropFirst("sticker_".count))),
-                   let coords = cubeletCoordinates(for: sticker) {
-                    let face = faceFor(dir: dir)
-                    return layerFor(coords: coords, face: face)
+                if name.hasPrefix("sticker_"), let dir = FaceDir(rawValue: String(name.dropFirst("sticker_".count))) {
+                    return faceFor(dir: dir)
                 }
             }
             return nil
@@ -349,46 +320,9 @@ struct Cube3DView: UIViewRepresentable {
             }
         }
 
-        private func layerFor(coords: (x: Int, y: Int, z: Int), face: Face) -> SelectedLayer {
-            switch face {
-            case .U: return SelectedLayer(axis: .y, slice: coords.y, normalFace: .U)
-            case .D: return SelectedLayer(axis: .y, slice: coords.y, normalFace: .D)
-            case .R: return SelectedLayer(axis: .x, slice: coords.x, normalFace: .R)
-            case .L: return SelectedLayer(axis: .x, slice: coords.x, normalFace: .L)
-            case .F: return SelectedLayer(axis: .z, slice: coords.z, normalFace: .F)
-            case .B: return SelectedLayer(axis: .z, slice: coords.z, normalFace: .B)
-            }
-        }
-
-        /// 从 sticker 节点向上追溯 cubelet 节点，解析归一化坐标（2 阶 ±1，3 阶 ±1/0）。
-        private func cubeletCoordinates(for node: SCNNode) -> (x: Int, y: Int, z: Int)? {
-            var n: SCNNode? = node
-            while n != nil {
-                guard let name = n?.name else { n = n?.parent; continue }
-                if name.hasPrefix("cubelet_") {
-                    let parts = name.dropFirst("cubelet_".count).split(separator: "_")
-                    if parts.count == 3,
-                       let x = Int(parts[0]), let y = Int(parts[1]), let z = Int(parts[2]) {
-                        return (x, y, z)
-                    }
-                }
-                if name.hasPrefix("cubelet2_") {
-                    let parts = name.dropFirst("cubelet2_".count).split(separator: "_")
-                    if parts.count == 3,
-                       let x = Int(parts[0]), let y = Int(parts[1]), let z = Int(parts[2]) {
-                        // 2 阶 key 为 ±5（表 ±0.5），归一化到 ±1
-                        let div = max(abs(x), 1)
-                        return (x / div, y / div, z / div)
-                    }
-                }
-                n = n?.parent
-            }
-            return nil
-        }
-
-        /// 根据起点层和滑动方向生成一次 90° 转动。
-        /// 规则：在命中面上沿主方向滑动；右/上=从该面看顺时针，左/下=逆时针。
-        private func moveForSwipe(on layer: SelectedLayer, dx: CGFloat, dy: CGFloat) -> Move? {
+        /// 根据起点面和滑动方向生成一次 90° 转动。
+        /// 规则：右/上=顺时针，左/下=逆时针（与标准魔方记号一致）。
+        private func moveForSwipe(on face: Face, dx: CGFloat, dy: CGFloat) -> Move? {
             let horizontal = abs(dx) >= abs(dy)
             let clockwise: Bool
             if horizontal {
@@ -396,33 +330,19 @@ struct Cube3DView: UIViewRepresentable {
             } else {
                 clockwise = dy < 0
             }
-            let baseMove = baseMoveForLayer(layer)
-            // 标准观察面：x 层从 R 看，y 层从 U 看，z 层从 F 看
-            let standardFace: Face
-            switch layer.axis {
-            case .x: standardFace = .R
-            case .y: standardFace = .U
-            case .z: standardFace = .F
-            }
-            // normalFace 与标准观察面同向则方向一致，反向（L/D/B）则相反
-            let sameDirection = (layer.normalFace == standardFace)
-            let effectiveClockwise = sameDirection ? clockwise : !clockwise
-            return effectiveClockwise ? baseMove : baseMove.inverted()
-        }
-
-        /// 从标准观察面看顺时针时，该层对应的 Move。
-        private func baseMoveForLayer(_ layer: SelectedLayer) -> Move {
-            switch (layer.axis, layer.slice) {
-            case (.x, 1):  return .R
-            case (.x, 0):  return .Mp
-            case (.x, -1): return .Lp
-            case (.y, 1):  return .U
-            case (.y, 0):  return .Ep
-            case (.y, -1): return .Dp
-            case (.z, 1):  return .F
-            case (.z, 0):  return .Sp
-            case (.z, -1): return .Bp
-            default:       return .R
+            switch (face, clockwise) {
+            case (.U, true):  return .U
+            case (.U, false): return .Up
+            case (.D, true):  return .D
+            case (.D, false): return .Dp
+            case (.L, true):  return .L
+            case (.L, false): return .Lp
+            case (.R, true):  return .R
+            case (.R, false): return .Rp
+            case (.F, true):  return .F
+            case (.F, false): return .Fp
+            case (.B, true):  return .B
+            case (.B, false): return .Bp
             }
         }
 
@@ -483,7 +403,6 @@ struct Cube3DView: UIViewRepresentable {
             (1, -1, -1), (0, -1, -1), (-1, -1, -1),
         ]
 
-        /// 构建可见块（内芯 + 可见面 sticker）。块数 = N³-1（3 阶 → 26）。
         /// 统一拆除所有阶数的魔方节点（切阶时避免旧阶节点残留叠加渲染 / 泄漏）。
         /// 三个 build 函数开头各调一次，确保场景里同一时刻只有一套 cube 节点。
         func removeAllCubeNodes() {
@@ -514,7 +433,7 @@ struct Cube3DView: UIViewRepresentable {
                 }
             }
             applyFacelets(facelets)
-            if let l = currentHighlightLayer { applyHighlight(layer: l) }
+            if let f = currentHighlightFace { applyHighlight(face: f) }
         }
 
         /// 创建一个 cubelet：黑色内芯 SCNBox + 最多 3 个 SCNPlane sticker 子节点
@@ -652,7 +571,7 @@ struct Cube3DView: UIViewRepresentable {
                 cubelets2x2[key] = node
             }
             applyFacelets2x2(facelets)
-            if let l = currentHighlightLayer { applyHighlight(layer: l) }
+            if let f = currentHighlightFace { applyHighlight(face: f) }
         }
 
         /// 创建 2 阶角块：黑色内芯 + 3 个可见外表面 sticker（角块必暴露 3 面）
@@ -779,7 +698,7 @@ struct Cube3DView: UIViewRepresentable {
                 }
             }
             applyFaceletsN(facelets)
-            if let l = currentHighlightLayer { applyHighlight(layer: l) }
+            if let f = currentHighlightFace { applyHighlight(face: f) }
         }
 
         /// 给高阶魔方重绘颜色：每个 facelet 值 → 对应贴纸节点颜色
@@ -792,68 +711,165 @@ struct Cube3DView: UIViewRepresentable {
             }
         }
 
-        // MARK: - 选层高亮（按钮/手势选中时，该切片内全部 stickers 加低透蓝色罩）
-        func applyHighlight(layer: SelectedLayer?) {
-            currentHighlightLayer = layer
+        // MARK: - 选层高亮（v8 定稿：选面→整层21个stickers→蓝框描边不遮色）
+        /// 高亮该外层涉及的「整个转动切片」：外层 21 个 stickers（外表面 9 + 相邻 4 面边缘各 3），
+        /// 每个 sticker 加一圈加粗蓝框（wireframe edge），保留原色，仅描边提示。
+        /// 内层 12 个 stickers（相邻 4 面各 3）。
+        /// 2 阶 24 stickers 高亮整层（含侧面），2 阶外层 = 8 个角块各 3 面 = 24 stickers。
+        /// 高阶（4~10）高亮该面所有 stickers（保持原 v8 行为）。
+        func applyHighlight(face: Face?) {
+            currentHighlightFace = face
             // 先清空所有高亮节点
             for n in highlightNodes.values { n.removeFromParentNode() }
             highlightNodes.removeAll()
-            guard let layer = layer else { return }
+            guard let face = face else { return }
 
-            // 低透蓝色：只给一层淡淡提示，不遮挡原色
-            let highlightColor = UIColor(red: 0.04, green: 0.52, blue: 1.0, alpha: 0.20)
-
-            // 高阶（4~10）：只支持外层，退化到按命中的 face 高亮
+            // 高阶：按命中的面高亮
             if currentOrder >= 4 {
                 let perFace = currentOrder * currentOrder
-                let fIdx = layer.normalFace.rawValue
+                let fIdx = face.rawValue
                 for idx in (fIdx * perFace)..<((fIdx + 1) * perFace) {
                     guard let sticker = cubeNStickers[idx] else { continue }
-                    addOverlay(to: sticker, color: highlightColor, key: "n_\(idx)")
+                    addStickerOutline(to: sticker, key: "n_\(idx)")
                 }
                 return
             }
 
-            // 2/3 阶：按层切片筛选 cubelet，高亮该切片内所有 stickers
-            let source = currentOrder == 2 ? cubelets2x2 : cubelets
-            for (key, node) in source {
-                guard let coords = parseCubeletKey(key) else { continue }
-                let inSlice: Bool
-                switch layer.axis {
-                case .x: inSlice = coords.x == layer.slice
-                case .y: inSlice = coords.y == layer.slice
-                case .z: inSlice = coords.z == layer.slice
-                }
-                guard inSlice else { continue }
-                for child in node.childNodes where child.name?.hasPrefix("sticker_") == true {
-                    addOverlay(to: child, color: highlightColor, key: key + "_" + (child.name ?? ""))
-                }
+            // 2/3 阶：先收集该层涉及的 sticker 节点
+            let involvedStickers = collectLayerStickers(for: face)
+            for sticker in involvedStickers {
+                let key = sticker.name ?? UUID().uuidString
+                addStickerOutline(to: sticker, key: key)
             }
         }
 
-        private func addOverlay(to sticker: SCNNode, color: UIColor, key: String) {
-            let overlay = SCNPlane(width: 0.86, height: 0.86)
-            let m = SCNMaterial()
-            m.diffuse.contents = color
-            m.lightingModel = .constant   // 不受光照影响，恒亮
-            m.isDoubleSided = true
-            overlay.materials = [m]
-            let overlayNode = SCNNode(geometry: overlay)
-            overlayNode.name = "highlight_overlay"
-            overlayNode.position = SCNVector3(0, 0, 0.02)
-            overlayNode.eulerAngles = sticker.eulerAngles
-            sticker.addChildNode(overlayNode)
-            highlightNodes[key] = overlayNode
+        /// 收集 face 外层（或 2 阶 24 stickers）涉及的所有 sticker 节点。
+        private func collectLayerStickers(for face: Face) -> [SCNNode] {
+            // 2 阶：没有内层概念，外层 = 所有 24 个 stickers（每个角块 3 面 = 24）
+            if currentOrder == 2 {
+                var result: [SCNNode] = []
+                for node in cubelets2x2.values {
+                    for child in node.childNodes where child.name?.hasPrefix("sticker_") == true {
+                        result.append(child)
+                    }
+                }
+                return result
+            }
+
+            // 3 阶：根据 face 决定哪些 facelet 索引属于该层
+            // 复用 faceMap：idx -> (x,y,z)
+            // 外层：face 法向 = ±1 的轴上 = 该面 9 个 + 相邻 4 面各 3 个边缘 stickers
+            // 内层 12 个 = 4 个相邻面各 3 个中央列
+            // 由于 Move 枚举只有外层 6 个 face（U/R/F/D/L/B），选中只会传外层 face，所以这里是 21 个
+            var indices = Set<Int>()
+            for (idx, coord) in faceMap.enumerated() {
+                let (x, y, z) = coord
+                let include: Bool
+                switch face {
+                case .U: include = (y ==  1)
+                case .D: include = (y == -1)
+                case .R: include = (x ==  1)
+                case .L: include = (x == -1)
+                case .F: include = (z ==  1)
+                case .B: include = (z == -1)
+                }
+                if include { indices.insert(idx) }
+            }
+
+            // 把 facelet 索引 → sticker 节点
+            var result: [SCNNode] = []
+            for idx in indices {
+                guard idx < faceMap.count else { continue }
+                let (x, y, z) = faceMap[idx]
+                let key = "\(x)_\(y)_\(z)"
+                guard let node = cubelets[key] else { continue }
+                let dir = dirForFaceletIndex(idx)
+                if let sticker = node.childNode(withName: "sticker_\(dir.rawValue)", recursively: false) {
+                    result.append(sticker)
+                }
+            }
+            return result
         }
 
-        /// 解析 cubelet key 为归一化坐标（3 阶 "-1_0_1"；2 阶 "+5_-5_+5" → ±1）。
-        private func parseCubeletKey(_ key: String) -> (x: Int, y: Int, z: Int)? {
-            let parts = key.split(separator: "_")
-            guard parts.count == 3,
-                  let x = Int(parts[0]), let y = Int(parts[1]), let z = Int(parts[2]) else { return nil }
-            // 2 阶坐标 ±5 归一化到 ±1；3 阶 ±1 保持不变
-            let div = max(abs(x), abs(y), abs(z), 1)
-            return (x / div, y / div, z / div)
+        /// 给 sticker 加一圈加粗蓝框（wireframe edges，constant lighting 不挡色）。
+        /// 做法：给 sticker 父节点加一个略大的 wireframe SCNBox（只渲染 12 条棱，蓝色实色），
+        /// 同时给 sticker 自己叠一层略小（0.92）的同位置 plane 防止内芯黑透出。
+        /// 视觉：sticker 周围出现一圈蓝色立方体线框，原色 sticker 仍清晰显示。
+        private func addStickerOutline(to sticker: SCNNode, key: String) {
+            // 1) wireframe 外框（蓝色实色线，constant lighting 不受光照）
+            let wire = SCNBox(width: 0.94, height: 0.94, length: 0.94, chamferRadius: 0.04)
+            let wireMat = SCNMaterial()
+            wireMat.diffuse.contents = UIColor(red: 0.04, green: 0.52, blue: 1.0, alpha: 1.0)
+            wireMat.lightingModel = .constant
+            wireMat.isDoubleSided = true
+            wireMat.fillMode = .lines   // 只画线框
+            // SCNMaterial.fillMode 在 macOS 不可用，用 wireframe 几何方案替代：
+            // —— 改用 4 条 SCNTube 沿 sticker 四边搭框
+            wire.materials = [wireMat]
+
+            // 用 4 条线在 sticker 周围搭一个边框（constant 蓝色实色）
+            let frame = buildStickerFrame(width: 0.94, height: 0.94, color: UIColor(red: 0.04, green: 0.52, blue: 1.0, alpha: 1.0))
+            frame.name = "highlight_outline_\(key)"
+            frame.position = SCNVector3(0, 0, 0.001)  // 略前于 sticker 避免 z-fight
+            frame.eulerAngles = sticker.eulerAngles
+            sticker.addChildNode(frame)
+            highlightNodes[key] = frame
+        }
+
+        /// 搭一个 sticker 周边的 4 边线框（SCNTube 围出矩形边线）
+        private func buildStickerFrame(width: CGFloat, height: CGFloat, color: UIColor) -> SCNNode {
+            let parent = SCNNode()
+            let lineThickness: CGFloat = 0.04
+            let w = width, h = height
+            // 4 条边线
+            let edges: [(SCNVector3, SCNVector3)] = [
+                // 上边
+                (SCNVector3(-w/2,  h/2, 0), SCNVector3( w/2,  h/2, 0)),
+                // 下边
+                (SCNVector3(-w/2, -h/2, 0), SCNVector3( w/2, -h/2, 0)),
+                // 左边
+                (SCNVector3(-w/2, -h/2, 0), SCNVector3(-w/2,  h/2, 0)),
+                // 右边
+                (SCNVector3( w/2, -h/2, 0), SCNVector3( w/2,  h/2, 0)),
+            ]
+            for (from, to) in edges {
+                let tube = lineNode(from: from, to: to, thickness: lineThickness, color: color)
+                parent.addChildNode(tube)
+            }
+            return parent
+        }
+
+        private func lineNode(from: SCNVector3, to: SCNVector3, thickness: CGFloat, color: UIColor) -> SCNNode {
+            let dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z
+            let length = sqrt(dx*dx + dy*dy + dz*dz)
+            let cylinder = SCNCylinder(radius: thickness / 2, height: CGFloat(length))
+            let mat = SCNMaterial()
+            mat.diffuse.contents = color
+            mat.lightingModel = .constant
+            mat.isDoubleSided = true
+            cylinder.materials = [mat]
+            let node = SCNNode(geometry: cylinder)
+            node.position = SCNVector3((from.x + to.x) / 2, (from.y + to.y) / 2, (from.z + to.z) / 2)
+            // cylinder 默认沿 y 轴；旋转到指向 (to - from)
+            let direction = simd_float3(dx, dy, dz)
+            let lengthSimd = simd_length(direction)
+            guard lengthSimd > 0 else { return node }
+            let normalized = direction / lengthSimd
+            // cylinder +y 轴 = (0,1,0)，求旋转 quaternion 把 (0,1,0) 旋到 normalized
+            let up = simd_float3(0, 1, 0)
+            let axis = simd_cross(up, normalized)
+            let dot = simd_dot(up, normalized)
+            if simd_length(axis) < 0.0001 {
+                // 平行：dot ≈ 1 同向，dot ≈ -1 反向
+                if dot < 0 {
+                    node.eulerAngles = SCNVector3(Float.pi, 0, 0)
+                }
+            } else {
+                let axisN = axis / simd_length(axis)
+                let angle = acos(min(1, max(-1, dot)))
+                node.rotation = SCNVector4(axisN.x, axisN.y, axisN.z, angle)
+            }
+            return node
         }
     }
 }

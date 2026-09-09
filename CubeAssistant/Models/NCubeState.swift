@@ -94,10 +94,8 @@ struct NCubeState: Equatable {
         return true
     }
 
-    /// 应用一次转动（moveIndex = Move.rawValue，0..26）。
-    /// 高阶当前只支持最外层转动（U/R/F/D/L/B），内层 M/E/S 忽略。
+    /// 应用一次转动（moveIndex = Move.rawValue，0..17）
     mutating func apply(_ moveIndex: Int) {
-        guard moveIndex < 18 else { return }
         let table = Self.moveTable(order: geometry.order)
         let p = table[moveIndex]
         let old = facelets
