@@ -48,6 +48,10 @@ final class CubeSession: NSObject, ObservableObject {
     /// 相机复位令牌：自增一次，3D 视图据此把视角回正到默认朝向。
     @Published private(set) var cameraResetToken: Int = 0
 
+    /// 最近一次打乱的转动序列（标准记号，如 ["R", "U2", "F'"]）。
+    /// 真魔方模式用来提示用户"照着拧"，虚拟模式留给「重看打乱」。
+    @Published private(set) var scrambleSteps: [String] = []
+
     private var timer: Timer?
     /// 暂停前累计的用时（秒）。支持「暂停→继续」跨段累计。
     private var accumulatedElapsed: TimeInterval = 0
@@ -82,11 +86,15 @@ final class CubeSession: NSObject, ObservableObject {
     /// 切换魔方阶数（2~10 阶）。切换时重建模型、清指引、复位计时。
     func setOrder(_ newOrder: Int) {
         guard (2...10).contains(newOrder), model.order != newOrder else { return }
-        let m = CubeModel(identity: model.identity, order: newOrder)
+        var m = CubeModel(identity: model.identity, order: newOrder)
+        // v22：4~10 阶的内层/多层只能靠手势操作，按钮模式对高阶是「残缺」的 →
+        // 高阶强制手势模式；切回 2/3 阶恢复默认按钮（重建会把 turnMode 重置为按钮）。
+        m.turnMode = newOrder >= 4 ? .gestures : .buttons
         model = m
         clearSolve()
         stopTimerUI()
         accumulatedElapsed = 0
+        scrambleSteps = []
         message = "已切换到 \(newOrder) 阶"
     }
 
@@ -119,12 +127,14 @@ final class CubeSession: NSObject, ObservableObject {
         model = m
         stopTimerUI()
         accumulatedElapsed = 0
+        scrambleSteps = []
     }
 
-    /// 切换转动方式（按钮/手势）
+    /// 切换转动方式（按钮/手势）。4~10 阶强制手势（按钮对高阶无法转内层）。
     func setTurnMode(_ mode: TurnMode) {
+        let effective: TurnMode = isHighOrder ? .gestures : mode
         var m = model
-        m.turnMode = mode
+        m.turnMode = effective
         model = m
     }
 
@@ -138,18 +148,28 @@ final class CubeSession: NSObject, ObservableObject {
         clearSolve()
         stopTimerUI()
         accumulatedElapsed = 0
+        scrambleSteps = []
         message = "已还原为初始状态"
     }
 
-    /// 随机打乱（默认 25 步，WCA 风格）
+    /// 随机打乱（默认 25 步，WCA 风格）。
+    /// v22 计时策略：**虚拟魔方打乱后自动开始计时**（转完自动停表，形成闭环）；
+    /// **真魔方保持手动开始** —— App 看不见真魔方，用户要先照着屏幕把打乱步骤拧到真魔方上，
+    /// 自动计时会把「照打乱」的时间也算进去（功能说明书 §0.4）。
     func scramble(count: Int = 25) {
         var m = model
-        m.scramble(count: count)
+        let moves = m.scramble(count: count)
         model = m
         clearSolve()
-        message = "已打乱，开始练习吧"
+        scrambleSteps = moves.map { $0.notation }
         stopTimerUI()
         accumulatedElapsed = 0
+        if m.identity == .virtual {
+            startTiming()
+            message = "已打乱 · 计时已开始，转吧"
+        } else {
+            message = "已打乱 · 照步骤拧真魔方，拧好点「开始」"
+        }
     }
 
     /// 由扫描/手填写入完整 54 色。返回是否成功（非法给出 message）。
@@ -163,6 +183,7 @@ final class CubeSession: NSObject, ObservableObject {
             message = "已识别魔方状态"
             stopTimerUI()
             accumulatedElapsed = 0
+            scrambleSteps = []
             return true
         case .failure(let e):
             message = "魔方状态非法：\(e)"

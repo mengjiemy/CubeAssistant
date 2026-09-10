@@ -41,21 +41,25 @@ public enum Move: Int, CaseIterable, Codable, Equatable, Hashable {
         }
     }
 
-    /// 该轴上的切片位置（外层 = ±1，内层 = 0）
+    /// 该轴上的切片位置（外层 = ±1，内层/中层 = 0）
     public var slice: Int {
         switch self {
-        case .U, .U2, .Up, .E, .E2, .Ep: return 1
+        case .U, .U2, .Up: return 1
         case .D, .D2, .Dp: return -1
         case .R, .R2, .Rp: return 1
         case .L, .L2, .Lp: return -1
-        case .F, .F2, .Fp, .S, .S2, .Sp: return 1
+        case .F, .F2, .Fp: return 1
         case .B, .B2, .Bp: return -1
-        case .M, .M2, .Mp: return 0
-        default: return 0
+        // v22 修正：M/E/S 都是「中层」→ slice 一律为 0（旧表把 E/S 写成 1，与语义不符）
+        case .M, .M2, .Mp, .E, .E2, .Ep, .S, .S2, .Sp: return 0
         }
     }
 
-    /// 对应的外层 face（用于 UI 显示）
+    /// 该转动所属轴的「正向 face」（用于 UI 方向基准：判断某次滑动/点击相对该层是顺还是逆）。
+    /// 约定：返回该轴正方向的外层 —— x→R、y→U、z→F。
+    /// 注意这不是「该转动看起来顺时针的观察面」：M 的标准顺时针是「从 L 看」，但本属性按上述
+    /// 轴正向约定返回 R。方向判断由调用方（Cube3DView/ContentView）用 `normalFace == outerFace`
+    /// 是否成立来翻转一次，两层约定配套使用，不要单独改一边。
     public var outerFace: Face {
         switch self {
         case .U, .U2, .Up, .E, .E2, .Ep, .D, .D2, .Dp: return .U

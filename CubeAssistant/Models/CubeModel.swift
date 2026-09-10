@@ -131,24 +131,29 @@ struct CubeModel: Equatable {
 
     /// 随机打乱（保证可还原）。虚拟魔方打乱后通常紧接着开始练习计时。
     /// physical 打乱后是否计时由用户手动决定（说明书 §2.2）。
-    mutating func scramble(count: Int = 25) {
+    /// - Returns: 本次打乱实际用到的转动序列（可读记号由调用方拼），供「真魔方照拧」展示。
+    @discardableResult
+    mutating func scramble(count: Int = 25) -> [Move] {
         if order == 2 {
             // 2 阶打乱：God's number 11，给足步数（~12）保证足够乱
-            cube2 = Cube2x2.scrambled(count: count <= 12 ? count : 12)
-            checkpoint2 = cube2?.facelets
+            let moves = ScrambleGenerator.generate(length: min(count, 12))
+            var c = Cube2x2(solved: true)
+            for m in moves { c.apply(m.rawValue) }
+            cube2 = c
+            checkpoint2 = c.facelets
             undoStack = []
             stopTiming()
-            return
+            return moves
         }
         if order >= 4 {
             var c = NCubeState(order: order, solved: true)
             // N 阶打乱步数按阶数放大（每层需足够随机）
-            _ = c.scramble(count: max(20, min(count, 80)))
+            let moves = c.scramble(count: max(20, min(count, 80)))
             cubeN = c
             checkpointN = c.facelets
             undoStack = []
             stopTiming()
-            return
+            return moves
         }
         let moves = ScrambleGenerator.generate(length: count)
         var c = CubeState(solved: true)
@@ -157,6 +162,7 @@ struct CubeModel: Equatable {
         checkpointFacelets = cube.facelets
         undoStack = []
         stopTiming()
+        return moves
     }
 
     /// 由扫描/手填写入完整色。校验通过 → 更新模型、设 checkpoint。

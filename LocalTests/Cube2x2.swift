@@ -48,10 +48,12 @@ public struct Cube2x2: Equatable {
         return true
     }
 
-    /// 应用一次转动（moveIndex 对应 Move 枚举 0..17，与 3 阶 movePerms 下标一致）。
+    /// 应用一次转动（moveIndex 对应 Move 枚举 rawValue）。
     /// 通过「映射到 3 阶角贴纸 → 应用 3 阶 movePerms → 提取回 24」实现，
     /// 复用已验证的 3 阶置换表，避免为 2 阶单独维护一份易错的转动表。
+    /// 2 阶无内层（M/E/S），moveIndex ≥ 18 直接忽略（2 阶物理无中层块）。
     public mutating func apply(_ moveIndex: Int) {
+        guard moveIndex < 18 else { return }
         facelets = Self.applyPerm(facelets, moveIndex)
     }
 

@@ -329,5 +329,87 @@ for order in 4...10 {
 }
 print("  4~10 阶 CubeModel 可玩链路全通过")
 
+// ---------- 3 阶中层 M/E/S 置换正确性（v22 修复回归，防止再写成"整颗绕轴转"） ----------
+print("\n【3 阶中层 M/E/S（v22 修复回归）】")
+
+func composeApply(_ p: [Int], then q: [Int]) -> [Int] { (0..<p.count).map { p[q[$0]] } }
+func permPower(_ p: [Int], _ n: Int) -> [Int] {
+    var r = Array(0..<p.count)
+    for _ in 0..<n { r = composeApply(r, then: p) }
+    return r
+}
+let ident54 = Array(0..<54)
+
+/// 3 阶面片索引 → cubelet 坐标（与 Cube3DView.faceMap 完全一致）
+let faceletXYZ: [(Int, Int, Int)] = [
+    (-1, 1, -1), (0, 1, -1), (1, 1, -1), (-1, 1, 0), (0, 1, 0), (1, 1, 0), (-1, 1, 1), (0, 1, 1), (1, 1, 1),
+    (1, 1, 1), (1, 1, 0), (1, 1, -1), (1, 0, 1), (1, 0, 0), (1, 0, -1), (1, -1, 1), (1, -1, 0), (1, -1, -1),
+    (-1, 1, 1), (0, 1, 1), (1, 1, 1), (-1, 0, 1), (0, 0, 1), (1, 0, 1), (-1, -1, 1), (0, -1, 1), (1, -1, 1),
+    (-1, -1, 1), (0, -1, 1), (1, -1, 1), (-1, -1, 0), (0, -1, 0), (1, -1, 0), (-1, -1, -1), (0, -1, -1), (1, -1, -1),
+    (-1, 1, -1), (-1, 1, 0), (-1, 1, 1), (-1, 0, -1), (-1, 0, 0), (-1, 0, 1), (-1, -1, -1), (-1, -1, 0), (-1, -1, 1),
+    (1, 1, -1), (0, 1, -1), (-1, 1, -1), (1, 0, -1), (0, 0, -1), (-1, 0, -1), (1, -1, -1), (0, -1, -1), (-1, -1, -1),
+]
+
+// movePerms 下标：M=18/M2=19/M'=20，E=21/E2=22/E'=23，S=24/S2=25/S'=26
+let midGroups: [(name: String, base: Int, changed: Set<Int>)] = [
+    ("M", 18, [1, 4, 7, 19, 22, 25, 28, 31, 34, 46, 49, 52]),
+    ("E", 21, [12, 13, 14, 21, 22, 23, 39, 40, 41, 48, 49, 50]),
+    ("S", 24, [3, 4, 5, 10, 13, 16, 30, 31, 32, 37, 40, 43]),
+]
+let midAxis: [String: Int] = ["M": 0, "E": 1, "S": 2]   // 中层所在轴（x/y/z）
+
+for g in midGroups {
+    let suffixes = ["", "2", "'"]
+    for k in 0..<3 {
+        let idx = g.base + k
+        let nm = "\(g.name)\(suffixes[k])"
+        let p = movePerms[idx]
+        check(Set(p) == Set(ident54), "\(nm) 是置换（双射）")
+        check(permPower(p, 4) == ident54, "\(nm) 转 4 次回原")
+        let ch = Set((0..<54).filter { p[$0] != $0 })
+        check(ch == g.changed, "\(nm) 只动 12 个中层色块（不是整颗绕轴转）")
+    }
+    check(composeApply(movePerms[g.base], then: movePerms[g.base + 2]) == ident54, "\(g.name) 与 \(g.name)' 互逆")
+    check(composeApply(movePerms[g.base + 1], then: movePerms[g.base + 1]) == ident54, "\(g.name)2 = \(g.name) 两次")
+    // 选层高亮集合 == 实际变化面片集合（所见即所得）
+    let ax = midAxis[g.name]!
+    func coordAt(_ i: Int, _ axis: Int) -> Int {
+        let c = faceletXYZ[i]
+        return axis == 0 ? c.0 : (axis == 1 ? c.1 : c.2)
+    }
+    let plane = Set((0..<54).filter { coordAt($0, ax) == 0 })
+    check(plane == g.changed, "\(g.name) 轴中层选层集合 == 实际变化面片集合（高亮与实际一致）")
+}
+
+// 铁证：R·M'·L' 必须等于「整颗魔方绕 x 轴刚体旋转」
+// 特征：动满 54 面片 + 4 次回原 + 把每个面整体映射到另一个面（不是旋转就会破）
+let xWhole = composeApply(composeApply(movePerms[3], then: movePerms[20]), then: movePerms[14])
+let xFixed = (0..<54).filter { xWhole[$0] == $0 }
+check(xFixed == [13, 40], "R·M'·L' 只有 R/L 中心块(13,40)不动，其余 52 面片全动（整颗绕 x 轴转的签名）")
+check(permPower(xWhole, 4) == ident54, "R·M'·L' 4 次回原（整颗旋转阶为 4）")
+var faceWhole = true
+for f in 0..<6 {
+    var targets = Set<Int>()
+    for i in (f * 9)..<(f * 9 + 9) { targets.insert(xWhole[i] / 9) }
+    if targets.count != 1 { faceWhole = false }
+}
+check(faceWhole, "R·M'·L' 把每个面整体映射到另一个面（刚体旋转特征 → M 方向正确）")
+
+// 4 阶内层置换仍正常（v21 能力不被本次改动波及）
+check(MovePerms4Inner.count == 96, "4 阶内层表面片数 = 96")
+var innerOK = true
+for p in MovePerms4Inner.table {
+    if Set(p) != Set(0..<96) || permPower(p, 4) != Array(0..<96) { innerOK = false }
+}
+check(innerOK && MovePerms4Inner.table.count == 18, "4 阶内层 18 个置换：双射 + 4 次回原")
+do {
+    var m4 = CubeModel(identity: .virtual, order: 4)
+    check(m4.isSolved, "4 阶初始已还原")
+    _ = m4.applySlice(SliceTurn(face: .R, turn: 1))
+    check(!m4.isSolved, "4 阶内层转一下 → 非还原")
+    check(m4.undo(), "4 阶内层 undo 生效")
+    check(m4.isSolved, "4 阶内层 undo 后回还原态")
+}
+
 print("\n========== 结果：\(passed) 通过 / \(failed) 失败 ==========")
 if failed > 0 { exit(1) } else { print("✅ 全部通过") }

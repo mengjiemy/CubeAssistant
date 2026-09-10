@@ -860,13 +860,12 @@ struct Cube3DView: UIViewRepresentable {
             return (coords[0], coords[1], coords[2])
         }
 
-        /// 把命中点映射到 9 种 SelectedLayer 之一。
+        /// 把命中点映射到某个 SelectedLayer。
         ///
-        /// 3 阶规则：外层可直接点该面角块选中；中层（M/E/S）在该面表现为「中央带」，
-        /// 点中央带（垂直于法向的两个轴里恰有一个坐标 = 0）即选中对应中层：
-        ///   - 点 F/B 面：x==0 → M 层，y==0 → E 层，否则 → 外层
-        ///   - 点 U/D 面：x==0 → M 层，z==0 → S 层，否则 → 外层
-        ///   - 点 R/L 面：y==0 → E 层，z==0 → S 层，否则 → 外层
+        /// - 2/3 阶与 5~10 阶：**点哪面 = 选哪一面的外层**（可预期，不会"点前面却转中层"）。
+        /// - 3 阶中层（M/E/S）不再由「中央带」隐式选中，改由主页「中层」chip 显式构造
+        ///   `SelectedLayer(axis:slice:0:normalFace:)` 传入（见 HomeView.middleChipRow）。v22 改。
+        /// - 4 阶：保留内层（第二层）命中 —— 用贴纸在「垂直于法向两轴」上的坐标 ±0.5 判断。
         private func layerForHit(_ hit: HitInfo) -> SelectedLayer {
             let normalFace = hit.face
 
@@ -908,36 +907,8 @@ struct Cube3DView: UIViewRepresentable {
                 return SelectedLayer(outer: normalFace)
             }
 
-            // 高阶（5-10，无内层）：只能选外层 6 个
-            if currentOrder >= 4 {
-                return SelectedLayer(outer: normalFace)
-            }
-
-            // 2 阶：没有「内层」概念 → 选外层 6 个之一
-            if currentOrder == 2 {
-                return SelectedLayer(outer: normalFace)
-            }
-
-            // 3 阶：用 cubelet 坐标确定 axis + slice
-            guard let (x, y, z) = hit.cubeletCoord else {
-                return SelectedLayer(outer: normalFace)
-            }
-
-            // 垂直于法向的两个轴坐标里，若恰有一个为 0（中央带）→ 选中层
-            switch normalFace {
-            case .F, .B:   // 法向 z；看 x(→M)、y(→E)
-                if x == 0 { return SelectedLayer(axis: .x, slice: 0, normalFace: normalFace) }  // M 层
-                if y == 0 { return SelectedLayer(axis: .y, slice: 0, normalFace: normalFace) }  // E 层
-                return SelectedLayer(outer: normalFace)
-            case .U, .D:   // 法向 y；看 x(→M)、z(→S)
-                if x == 0 { return SelectedLayer(axis: .x, slice: 0, normalFace: normalFace) }  // M 层
-                if z == 0 { return SelectedLayer(axis: .z, slice: 0, normalFace: normalFace) }  // S 层
-                return SelectedLayer(outer: normalFace)
-            case .R, .L:   // 法向 x；看 y(→E)、z(→S)
-                if y == 0 { return SelectedLayer(axis: .y, slice: 0, normalFace: normalFace) }  // E 层
-                if z == 0 { return SelectedLayer(axis: .z, slice: 0, normalFace: normalFace) }  // S 层
-                return SelectedLayer(outer: normalFace)
-            }
+            // 2/3/5~10 阶：点面 = 选该面的外层
+            return SelectedLayer(outer: normalFace)
         }
 
         /// 滑动手势 → 该层的 Move。

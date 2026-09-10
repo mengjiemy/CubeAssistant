@@ -14,6 +14,31 @@ enum AppTheme {
     static let bgBottom = Color(red: 0.01, green: 0.01, blue: 0.03)
     /// 全页深空渐变背景（用作页面/Sheet 底色）
     static let spaceGradient = LinearGradient(colors: [bgTop, bgBottom], startPoint: .top, endPoint: .bottom)
+
+    /// 身份色：真魔方 = 橙（"实物/扫描"语义），虚拟魔方 = 品牌蓝（"屏幕/数字"语义）。
+    /// v22 起用于区分「真魔方 / 虚拟魔方」两态，避免两者长得一模一样、用户看不出区别。
+    static let identityPhysical = Color(red: 1.0, green: 0.58, blue: 0.16)
+    static let identityVirtual = accent
+}
+
+/// 主页新手气泡的锚点帧收集（id → 该控件在主页坐标系里的 rect）
+private struct TipAnchorKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+private extension View {
+    /// 把一个控件登记为新手气泡的高亮锚点
+    func tipAnchor(_ id: String) -> some View {
+        background(
+            GeometryReader { proxy in
+                Color.clear.preference(key: TipAnchorKey.self,
+                                       value: [id: proxy.frame(in: .named("homeRoot"))])
+            }
+        )
+    }
 }
 
 /// 主界面：4-Tab 框架（主页 / 扫描 / 学习 / 我的）。
@@ -23,6 +48,8 @@ enum AppTheme {
 struct ContentView: View {
     @StateObject private var session = CubeSession()
     @State private var selectedTab: Tab = .home
+    /// 「我的 → 新手引导」请求重放主页气泡（置 true → 切回主页 → 主页播完复位）
+    @State private var replayHomeTips: Bool = false
 
     init() {}
 
@@ -54,10 +81,13 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 Group {
                     switch selectedTab {
-                    case .home: HomeView(session: session)
+                    case .home: HomeView(session: session, replayTips: $replayHomeTips)
                     case .scan: CameraScanView(session: session)
                     case .learn: LearnView(session: session)
-                    case .mine: MineView(session: session)
+                    case .mine: MineView(session: session, onReplayTips: {
+                        replayHomeTips = true
+                        selectedTab = .home
+                    })
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -94,8 +124,14 @@ struct ContentView: View {
 // MARK: - 主页
 struct HomeView: View {
     @ObservedObject var session: CubeSession
+    /// 「我的 → 新手引导」请求重放主页气泡（由 ContentView 置 true，播完复位）
+    @Binding var replayTips: Bool
     @State private var selectedLayer: Cube3DView.SelectedLayer? = Cube3DView.SelectedLayer(outer: .U)
     @State private var timingState: TimingState = .idle
+    /// 新手气泡当前步下标（nil = 不显示）
+    @State private var tipStep: Int? = nil
+    /// 是否已看过新手气泡（本地持久化）
+    @AppStorage("hasSeenHomeTips") private var hasSeenHomeTips: Bool = false
 
     /// 计时三态：未开始 → 进行中 → 暂停
     enum TimingState: Equatable {
@@ -104,13 +140,40 @@ struct HomeView: View {
         case paused      // 已暂停（用户点击想结束 / 完成复原）
     }
 
+    init(session: CubeSession, replayTips: Binding<Bool>) {
+        self._session = ObservedObject(wrappedValue: session)
+        self._replayTips = replayTips
+    }
+
+    /// 主页新手气泡的 6 步文案（按操作动线排序）
+    private static let tips: [HomeTip] = [
+        HomeTip(anchor: "order",    title: "① 先选阶数",      body: "点这里在 2~10 阶之间切换。新手建议从 3 阶开始，2 阶最简单、4 阶以上是进阶玩法。"),
+        HomeTip(anchor: "identity", title: "② 真魔方 / 虚拟魔方", body: "「虚拟魔方」在屏幕上直接转，转对会自动停表；「真魔方」是照着屏幕上的打乱步骤拧手里的魔方，计时手动启停。两者玩法和提示都不一样。"),
+        HomeTip(anchor: "turnmode", title: "③ 转层方式",       body: "「按钮」：点下面的面按钮选层，再点顺/逆时针；「手势」：直接在魔方上点选层、滑动转动。这是两种不同的操作方式，不是两个页面。"),
+        HomeTip(anchor: "cube",     title: "④ 在魔方上操作",   body: "手势模式下，点一下魔方会选中一层（蓝色描边）；再左右或上下滑一下，这一层就转好了。点空白处可取消选中。"),
+        HomeTip(anchor: "timing",   title: "⑤ 计时",           body: "虚拟魔方打乱后自动开始计时；真魔方点「开始」计时、完成后点「完成」记成绩。"),
+        HomeTip(anchor: "action",   title: "⑥ 打乱 · 撤销 · 还原", body: "「打乱」开始练习；转错了点「撤销」逐步回退（可一路退到打乱前）；「还原」直接回到六面纯色。"),
+    ]
+
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
+            HStack(spacing: 6) {
                 Text("魔方学院")
                     .font(.title2.weight(.bold))
                     .foregroundColor(.white)
-                Spacer()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                    .layoutPriority(1)
+                // 重看新手引导（与「我的 → 新手引导」等价，入口更近）
+                Button {
+                    tipStep = 0
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                .buttonStyle(.plain)
+                Spacer(minLength: 4)
                 // 阶数切换（2~10 阶）。4~10 为高阶：可打乱/手动转/判定还原，暂无自动求解。
                 Menu {
                     ForEach(2...10, id: \.self) { o in
@@ -125,63 +188,61 @@ struct HomeView: View {
                         }
                     }
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 3) {
                         Image(systemName: "square.grid.3x3.fill")
-                            .font(.caption2)
+                            .font(.system(size: 9))
                         Text("\(session.order)阶")
                             .font(.caption.weight(.semibold))
                         Image(systemName: "chevron.down")
                             .font(.system(size: 8, weight: .bold))
                     }
                     .foregroundColor(.white)
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 9)
                     .padding(.vertical, 6)
                     .background(Capsule().fill(AppTheme.accent.opacity(0.25)))
                 }
+                .tipAnchor("order")
+
+                // 真魔方 / 虚拟魔方：v22 起用不同配色区分两态（旧版两者同为蓝色 → 用户看不出区别）
                 Button {
                     session.setIdentity(session.identity == .physical ? .virtual : .physical)
                 } label: {
                     Label(session.identity == .physical ? "真魔方" : "虚拟魔方",
                           systemImage: session.identity == .physical ? "cube" : "laptopcomputer")
-                        .font(.caption.weight(.semibold))
+                        .font(.caption2.weight(.semibold))
+                        .labelStyle(.titleAndIcon)
                         .foregroundColor(.white)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, 9)
                         .padding(.vertical, 6)
-                        .background(Capsule().fill(AppTheme.accent.opacity(0.25)))
+                        .background(Capsule().fill(identityTint.opacity(0.3)))
+                        .overlay(Capsule().stroke(identityTint.opacity(0.7), lineWidth: 1))
                 }
+                .tipAnchor("identity")
             }
             .padding(.horizontal, 20)
             .padding(.top, 8)
-            .padding(.bottom, 12)
+            .padding(.bottom, 6)
 
-            // 转动方式切换（按钮 / 手势）—— 短横条切换器
-            HStack(spacing: 6) {
-                Image(systemName: "hand.tap")
+            // 身份说明：一句话讲清「真魔方 / 虚拟魔方」差别（旧版切换后主页几乎无差异）
+            HStack(spacing: 5) {
+                Image(systemName: session.identity == .physical ? "cube" : "laptopcomputer")
+                    .font(.system(size: 10))
+                Text(identityExplain)
                     .font(.caption2)
-                    .foregroundColor(.secondary)
-                Picker("转动方式", selection: Binding(
-                    get: { session.turnMode },
-                    set: { session.setTurnMode($0) }
-                )) {
-                    Text("按钮").tag(TurnMode.buttons)
-                    Text("手势").tag(TurnMode.gestures)
-                }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 220)
-                .tint(AppTheme.accent)
-                if session.turnMode == .gestures {
-                    Label("点选层，左右滑转", systemImage: "hand.draw")
-                        .font(.caption2)
-                        .foregroundColor(AppTheme.accent)
-                }
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 Spacer()
             }
+            .foregroundColor(identityTint)
             .padding(.horizontal, 20)
             .padding(.bottom, 8)
+
+            turnModeBar
 
             ScrollView {
                 VStack(spacing: 14) {
                     timingCard
+                        .tipAnchor("timing")
 
                     ZStack(alignment: .topTrailing) {
                         Cube3DView(
@@ -220,6 +281,7 @@ struct HomeView: View {
                         .buttonStyle(.plain)
                         .padding(12)
                     }
+                    .tipAnchor("cube")
 
                     // 提示语固定占位，避免出现/消失导致界面跳动
                     Text(session.message ?? " ")
@@ -231,18 +293,216 @@ struct HomeView: View {
                         .padding(.horizontal, 20)
                         .frame(height: 20)
 
-                    if session.turnMode == .buttons {
+                    // 3 阶 + 手势：中层（M/E/S）显式入口（v22 改：中层不再靠点中央带隐式选中）
+                    if session.order == 3 && session.turnMode == .gestures {
+                        middleChipRow
+                    }
+
+                    // 6 面按钮：仅 2/3 阶 + 按钮模式（高阶强制手势，不显示）
+                    if !session.isHighOrder && session.turnMode == .buttons {
                         turnControls
                     }
+
+                    // 真魔方：把打乱步骤列出来，方便照着拧手里的魔方
+                    if session.identity == .physical && !session.scrambleSteps.isEmpty {
+                        scrambleStepsCard
+                    }
+
                     actionRow
+                        .tipAnchor("action")
                 }
                 .padding(.bottom, 40)
             }
         }
-        // 虚拟模式：转完自动停表结算后，本地计时态需同步复位（否则仍显示「暂停」）
+        .coordinateSpace(name: "homeRoot")
+        // 计时态以 session.isTiming 为唯一事实源（收敛旧的「双源」）：
+        // 虚拟模式打乱后自动开始 → 本地态跟上；转完自动停表 / 切换阶数停表 → 本地态复位。
         .onChange(of: session.isTiming) { nowTiming in
-            if !nowTiming && timingState == .running { timingState = .idle }
+            if nowTiming {
+                if timingState == .idle { timingState = .running }
+            } else if timingState == .running {
+                timingState = .idle
+            }
         }
+        .onAppear {
+            if !hasSeenHomeTips { tipStep = 0 }
+        }
+        // 「我的 → 新手引导」请求重放
+        .onChange(of: replayTips) { want in
+            if want { tipStep = 0; replayTips = false }
+        }
+        .overlayPreferenceValue(TipAnchorKey.self) { anchors in
+            if let step = tipStep, step >= 0, step < Self.tips.count {
+                HomeTipsOverlay(
+                    tip: Self.tips[step],
+                    index: step,
+                    total: Self.tips.count,
+                    anchor: anchors[Self.tips[step].anchor],
+                    onNext: {
+                        if step + 1 >= Self.tips.count {
+                            tipStep = nil
+                            hasSeenHomeTips = true
+                        } else {
+                            tipStep = step + 1
+                        }
+                    },
+                    onSkip: {
+                        tipStep = nil
+                        hasSeenHomeTips = true
+                    }
+                )
+            }
+        }
+    }
+
+    // MARK: 身份色与说明（真魔方 / 虚拟魔方）
+
+    private var identityTint: Color {
+        session.identity == .physical ? AppTheme.identityPhysical : AppTheme.identityVirtual
+    }
+
+    private var identityExplain: String {
+        session.identity == .physical
+            ? "真魔方 · 照屏幕上的打乱步骤拧手里的魔方，计时手动启停"
+            : "虚拟魔方 · 直接在屏幕上转，转对会自动停表"
+    }
+
+    // MARK: 转层方式（按钮 / 手势）
+
+    /// 转层方式：2/3 阶可切换；4~10 阶内层只能用手机势 → 强制手势、显示静态标签 + 内层说明。
+    @ViewBuilder
+    private var turnModeBar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if session.isHighOrder {
+                HStack(spacing: 6) {
+                    Image(systemName: "hand.draw").font(.caption2)
+                    Text("转层方式：手势（\(session.order) 阶内层只能用手势转）")
+                        .font(.caption2.weight(.semibold))
+                    Spacer()
+                }
+                .foregroundColor(AppTheme.accent)
+
+                Text(session.order == 4
+                     ? "4 阶支持内层：点内层色块选中后滑动即转动"
+                     : "\(session.order) 阶内层转动开发中 · 敬请期待（当前可转最外层）")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            } else {
+                HStack(spacing: 8) {
+                    Text("转层方式")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Picker("转层方式", selection: Binding(
+                        get: { session.turnMode },
+                        set: { session.setTurnMode($0) }
+                    )) {
+                        Text("按钮").tag(TurnMode.buttons)
+                        Text("手势").tag(TurnMode.gestures)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 180)
+                    .tint(AppTheme.accent)
+                    Spacer()
+                }
+                Text(session.turnMode == .buttons
+                     ? "按钮：点下方 6 个面按钮选层，再点顺/逆时针"
+                     : "手势：点魔方选层，左右/上下滑动即可转")
+                    .font(.caption2)
+                    .foregroundColor(AppTheme.accent.opacity(0.9))
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 8)
+        .tipAnchor("turnmode")
+    }
+
+    // MARK: 中层入口（3 阶 + 手势）
+
+    private struct MiddleChip {
+        let title: String
+        let sub: String
+        let layer: Cube3DView.SelectedLayer
+    }
+
+    /// 3 阶三个中层。normalFace 按「滑动手感」选：让用户顺着直觉滑就得到想要的转向。
+    private static let middleChips: [MiddleChip] = [
+        MiddleChip(title: "M", sub: "中列",
+                   layer: Cube3DView.SelectedLayer(axis: .x, slice: 0, normalFace: .F)),
+        MiddleChip(title: "E", sub: "中行",
+                   layer: Cube3DView.SelectedLayer(axis: .y, slice: 0, normalFace: .U)),
+        MiddleChip(title: "S", sub: "中环",
+                   layer: Cube3DView.SelectedLayer(axis: .z, slice: 0, normalFace: .F)),
+    ]
+
+    private var middleChipRow: some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 8) {
+                Text("中层")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                ForEach(Self.middleChips, id: \.title) { chip in
+                    let on = (selectedLayer == chip.layer)
+                    Button {
+                        selectedLayer = on ? nil : chip.layer
+                    } label: {
+                        VStack(spacing: 1) {
+                            Text(chip.title)
+                                .font(.system(size: 14, weight: .bold, design: .rounded))
+                            Text(chip.sub)
+                                .font(.caption2)
+                        }
+                        .foregroundColor(on ? .white : .white.opacity(0.6))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .background(Capsule().fill(on ? AppTheme.accent : Color.white.opacity(0.06)))
+                        .overlay(Capsule().stroke(on ? Color(red: 0.3, green: 0.7, blue: 1.0) : Color.clear, lineWidth: 2))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Text(middleHint)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 20)
+    }
+
+    private var middleHint: String {
+        guard let l = selectedLayer, !l.isInner, l.slice == 0 else {
+            return "点 M/E/S 选中一层，再在魔方上滑动即转动"
+        }
+        switch l.axis {
+        case .x: return "已选中层 M · 上下滑动魔方（前面中列上下走）"
+        case .y: return "已选中层 E · 左右滑动魔方（前面中行左右走）"
+        case .z: return "已选中层 S · 左右滑动魔方（顶层中行左右走）"
+        }
+    }
+
+    // MARK: 打乱步骤（真魔方专用）
+
+    /// 真魔方：把本次打乱的转动序列列出来，用户照着拧手里的魔方。
+    private var scrambleStepsCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "list.number").font(.caption2)
+                Text("打乱步骤 · 共 \(session.scrambleSteps.count) 步")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Text("照此拧真魔方")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .foregroundColor(AppTheme.identityPhysical)
+
+            Text(session.scrambleSteps.joined(separator: "  "))
+                .font(.system(.caption, design: .monospaced))
+                .foregroundColor(.white.opacity(0.85))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 14).fill(.ultraThinMaterial))
+        .padding(.horizontal, 20)
     }
 
     // MARK: 计时卡（三态）
@@ -369,25 +629,6 @@ struct HomeView: View {
     // MARK: 转层控件（选面 + 顺/逆时针，方向固定正确）
     private var turnControls: some View {
         VStack(spacing: 10) {
-            // 高阶提示：4 阶支持内层（手势点侧面选内层）；5~10 阶内层开发中（预览）
-            if session.order == 4 {
-                HStack(spacing: 4) {
-                    Image(systemName: "hand.tap")
-                        .font(.caption2)
-                    Text("4 阶支持内层：手势模式点侧面选内层转动")
-                        .font(.caption2)
-                }
-                .foregroundColor(.secondary)
-            } else if session.isHighOrder {
-                HStack(spacing: 4) {
-                    Image(systemName: "sparkles")
-                        .font(.caption2)
-                    Text("\(session.order) 阶内层转动开发中 · 敬请期待（当前可转最外层）")
-                        .font(.caption2)
-                }
-                .foregroundColor(.secondary)
-            }
-
             // 6 面选层（选中蓝框高亮），两排：上左前 / 下右后，字母+中文对照公式
             HStack(spacing: 8) {
                 ForEach([Face.U, Face.L, Face.F], id: \.self) { f in
@@ -481,7 +722,8 @@ struct HomeView: View {
     private var actionRow: some View {
         HStack(spacing: 10) {
             Button { session.scramble() } label: {
-                Label("打乱", systemImage: "shuffle")
+                // 真魔方：App 看不见真魔方 → 打出的是「步骤」，要用户自己照拧
+                Label(session.identity == .physical ? "生成打乱" : "打乱", systemImage: "shuffle")
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
@@ -538,6 +780,118 @@ struct HomeView: View {
     }
 
     static func formatTime(_ t: TimeInterval) -> String { formatSolveTime(t) }
+}
+
+// MARK: - 新手气泡引导（主页专用）
+//
+// 决策（v22）：本轮只做主页气泡，不做功能说明书 §1 的「3 屏首启引导」。
+// 首次进入主页自动播一次；「我的 → 新手引导」或主页标题旁「?」可重看。
+private struct HomeTip {
+    let anchor: String
+    let title: String
+    let body: String
+}
+
+/// 新手气泡：全屏压暗遮罩 + 锚点挖空高亮 + 气泡卡（下一步 / 跳过 / 开始使用）。
+/// 挖空用「四块压暗矩形拼合」实现（不用 blendMode），避免 mask 合成在真机上的兼容坑。
+private struct HomeTipsOverlay: View {
+    let tip: HomeTip
+    let index: Int
+    let total: Int
+    /// 高亮目标在 homeRoot 坐标系里的位置（nil / 无效 → 退化为屏幕中央）
+    let anchor: CGRect?
+    let onNext: () -> Void
+    let onSkip: () -> Void
+
+    var body: some View {
+        GeometryReader { geo in
+            let rect = resolved(anchor, in: geo.size)
+            ZStack(alignment: .topLeading) {
+                dim(excluding: rect)
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(AppTheme.accent, lineWidth: 2)
+                    .frame(width: rect.width, height: rect.height)
+                    .position(x: rect.midX, y: rect.midY)
+                card(in: geo.size, rect: rect)
+            }
+        }
+    }
+
+    /// 压暗遮罩（挖掉 rect 区域 → 该区域保持原亮度）
+    private func dim(excluding r: CGRect) -> some View {
+        let dim = Color.black.opacity(0.72)
+        return VStack(spacing: 0) {
+            dim.frame(height: max(0, r.minY))
+            HStack(spacing: 0) {
+                dim.frame(width: max(0, r.minX))
+                Color.clear.frame(width: max(0, r.width), height: max(0, r.height))
+                dim
+            }
+            .frame(height: max(0, r.height))
+            dim
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { /* 吞掉点击，避免误触底层控件 */ }
+    }
+
+    private func card(in size: CGSize, rect: CGRect) -> some View {
+        let w = min(size.width - 32, 340)
+        let below = rect.maxY + 220 < size.height
+        let cardH: CGFloat = 210
+        return cardBody(w)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: below ? .top : .bottom)
+            .padding(.top, below ? min(rect.maxY + 14, max(0, size.height - cardH)) : 0)
+            .padding(.bottom, below ? 0 : min(max(0, size.height - rect.minY + 14), max(0, size.height - cardH)))
+    }
+
+    private func cardBody(_ w: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("新手引导 \(index + 1)/\(total)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(AppTheme.accent)
+                Spacer()
+                Button(action: onSkip) {
+                    Text("跳过")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+            }
+            Text(tip.title)
+                .font(.headline)
+                .foregroundColor(.white)
+            Text(tip.body)
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.85))
+                .fixedSize(horizontal: false, vertical: true)
+            Button(action: onNext) {
+                Text(index + 1 >= total ? "开始使用" : "下一步")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(Capsule().fill(AppTheme.accent))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(16)
+        .frame(width: w, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(red: 0.09, green: 0.09, blue: 0.14))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.12), lineWidth: 1))
+        )
+        .shadow(color: .black.opacity(0.45), radius: 16, y: 8)
+    }
+
+    private func resolved(_ a: CGRect?, in size: CGSize) -> CGRect {
+        guard let a, a.width > 1, a.height > 1,
+              a.origin.x.isFinite, a.origin.y.isFinite else {
+            return CGRect(x: size.width / 2 - 60, y: size.height / 2 - 60, width: 120, height: 120)
+        }
+        return a.insetBy(dx: -8, dy: -8)
+    }
 }
 
 // MARK: - 学习页
@@ -1605,6 +1959,8 @@ struct FAQRow: View {
 // MARK: - 我的页（按原型 v4 重构）
 struct MineView: View {
     @ObservedObject var session: CubeSession
+    /// 重看主页新手引导（由 ContentView 切回主页并触发气泡）
+    let onReplayTips: () -> Void
     /// 当前编辑的资料草稿（编辑弹层用）
     @State private var editingNickname = ""
     @State private var editingSignature = ""
@@ -1777,12 +2133,13 @@ struct MineView: View {
     private var menuList: some View {
         VStack(spacing: 8) {
             menuRow(icon: "gearshape.fill", title: "设置", desc: "档位、资料、主题", action: { showEditProfile = true })
+            menuRow(icon: "lightbulb.fill", title: "新手引导", desc: "重看主页操作指引（6 步）", action: { onReplayTips() })
             menuRow(icon: "clock.arrow.circlepath", title: "还原历史", desc: "\(session.history.count) 条记录", action: { showHistorySheet = true })
             menuRow(icon: "bookmark.fill", title: "我的收藏公式", desc: favoriteDesc, action: { showFavoriteSheet = true })
             menuRow(icon: "trophy.fill", title: "成就", desc: "已解锁 \(unlockedAchievementCount)/\(Achievement.all.count) 项", action: { showAchievementSheet = true })
             menuRow(icon: "square.and.arrow.up", title: "数据备份", desc: "导出/导入 JSON", action: { showBackupSheet = true })
             menuRow(icon: "bubble.left.and.bubble.right.fill", title: "意见反馈", desc: "告诉我们哪里需要改进", action: { showFeedbackSheet = true })
-            menuRow(icon: "info.circle.fill", title: "关于魔方学院", desc: "v0.5 · 本地数据 · 无需联网", action: { showAboutSheet = true })
+            menuRow(icon: "info.circle.fill", title: "关于魔方学院", desc: "v0.6 · 本地数据 · 无需联网", action: { showAboutSheet = true })
         }
         .padding(.horizontal, 20)
     }
@@ -2156,7 +2513,7 @@ struct MineView: View {
                         Text("魔方学院")
                             .font(.title.weight(.bold))
                             .foregroundColor(.white)
-                        Text("v0.5 · 一夜冲刺版")
+                        Text("v0.6 · 体验优化版")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
@@ -2164,11 +2521,26 @@ struct MineView: View {
                     Group {
                         infoRow("定位", "魔方练习者的私人教练")
                         infoRow("支持阶数", "2 阶 - 10 阶")
+                        infoRow("玩法", "真魔方 / 虚拟魔方 · 按钮 / 手势两种转层方式")
                         infoRow("数据", "本地存储，不联网")
                         infoRow("识别", "拍照 + HSV 颜色识别")
                         infoRow("求解", "Kociemba 两阶段（3 阶） / 角块 BFS（2 阶）· 高阶求解规划中")
                         infoRow("开发", "杰哥 + 助手")
                     }
+                    .padding(.horizontal, 20)
+                    // 重看主页新手引导
+                    Button {
+                        showAboutSheet = false
+                        onReplayTips()
+                    } label: {
+                        Label("重看新手引导", systemImage: "lightbulb.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
+                            .background(Capsule().fill(AppTheme.accent.opacity(0.85)))
+                    }
+                    .buttonStyle(.plain)
                     .padding(.horizontal, 20)
                     Color.clear.frame(height: 20)
                 }
