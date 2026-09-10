@@ -284,7 +284,8 @@ struct Cube3DView: UIViewRepresentable {
         var lastCameraResetToken: Int = 0
         var currentOrder = 3
         var currentHighlightLayer: SelectedLayer? = nil
-        var highlightNodes: [String: SCNNode] = [:]
+        /// 所有 outline parent 节点。改用 Set 而非 dict：避免 key 冲突导致旧节点泄漏残留。
+        var highlightNodes: Set<SCNNode> = []
         // 高阶
         var cubeNAllNodes: [SCNNode] = []
         var cubeNStickers: [Int: SCNNode] = [:]
@@ -327,7 +328,9 @@ struct Cube3DView: UIViewRepresentable {
                     scnView.removeGestureRecognizer(pan)
                     panGesture = nil
                 }
-                // 取消可能残留的选中，恢复相机可旋转
+                // 取消可能残留的选中：清掉 outline 节点 + state，恢复相机可旋转
+                for node in highlightNodes { node.removeFromParentNode() }
+                highlightNodes.removeAll()
                 currentHighlightLayer = nil
                 panStartLayer = nil
             }
@@ -377,15 +380,11 @@ struct Cube3DView: UIViewRepresentable {
                     panStartLayer = nil
                     return
                 }
-                // 已选中层：起点必须是同一层（避免拖出层外时误转）
-                if let hit = hitInfo(point: point, in: scnView) {
-                    let layer = layerForHit(hit)
-                    if layer == currentHighlightLayer {
-                        panStartLayer = layer
-                        gesture.setTranslation(.zero, in: scnView)
-                    } else {
-                        panStartLayer = nil
-                    }
+                // 已选中层：起点必须命中魔方（任意 sticker 即可，不要求层一致——
+                // 用户选中"外层 U"时可能从任意 U 面 sticker 起滑；中层 M/E/S 也只要命中魔方即可）。
+                if hitInfo(point: point, in: scnView) != nil {
+                    panStartLayer = currentHighlightLayer
+                    gesture.setTranslation(.zero, in: scnView)
                 } else {
                     panStartLayer = nil
                 }
@@ -454,7 +453,7 @@ struct Cube3DView: UIViewRepresentable {
             cubeNAllNodes.forEach { $0.removeFromParentNode() }
             cubeNAllNodes.removeAll()
             cubeNStickers.removeAll()
-            highlightNodes.forEach { $0.value.removeFromParentNode() }
+            highlightNodes.forEach { $0.removeFromParentNode() }
             highlightNodes.removeAll()
         }
 
@@ -904,8 +903,8 @@ struct Cube3DView: UIViewRepresentable {
         /// 应用层高亮：清空旧高亮节点 → 给该层每个 sticker 加 4 条短边线（SCNBox）。
         /// 边线贴 sticker 平面外 0.01 处，constant lighting 蓝色实色，不挡原色。
         func applyHighlight(layer: SelectedLayer?) {
-            // 先清空
-            highlightNodes.values.forEach { $0.removeFromParentNode() }
+            // 先清空（用 Set 遍历，直接 removeFromParentNode，确保没有 outline 泄漏）
+            for node in highlightNodes { node.removeFromParentNode() }
             highlightNodes.removeAll()
             currentHighlightLayer = layer
             guard let layer = layer else { return }
@@ -916,7 +915,7 @@ struct Cube3DView: UIViewRepresentable {
                 let fIdx = layer.normalFace.rawValue
                 for idx in (fIdx * perFace)..<((fIdx + 1) * perFace) {
                     guard let sticker = cubeNStickers[idx] else { continue }
-                    addStickerOutline(to: sticker, key: "n_\(idx)")
+                    addStickerOutline(to: sticker)
                 }
                 return
             }
@@ -924,18 +923,17 @@ struct Cube3DView: UIViewRepresentable {
             // 2 阶：选中的 normalFace 对应的 4 个 stickers（每角块的 normalFace 面）
             if currentOrder == 2 {
                 let dir = dirForNormalFace(layer.normalFace)
-                for (key, node) in cubelets2x2 {
+                for (_, node) in cubelets2x2 {
                     guard let sticker = node.childNode(withName: "sticker_\(dir.rawValue)", recursively: false) else { continue }
-                    addStickerOutline(to: sticker, key: "2x2_\(key)")
+                    addStickerOutline(to: sticker)
                 }
                 return
             }
 
             // 3 阶：收集该层所有 sticker 节点
             let stickers = collectLayerStickers(layer: layer)
-            for (i, sticker) in stickers.enumerated() {
-                let key = sticker.name ?? "i_\(i)"
-                addStickerOutline(to: sticker, key: key)
+            for sticker in stickers {
+                addStickerOutline(to: sticker)
             }
         }
 
@@ -988,14 +986,16 @@ struct Cube3DView: UIViewRepresentable {
         /// 给一个 sticker 加一圈蓝色线框（4 条短 SCNBox，贴在 sticker 平面外 0.01 处）。
         /// SCNBox 厚度 0.02（line thickness），constant 蓝色实色，不挡 sticker 原色。
         /// 位置 / 朝向与 sticker 完全对齐，只在 +z 方向平移 0.01 避免 z-fight。
-        private func addStickerOutline(to sticker: SCNNode, key: String) {
+        /// v19 改动：去掉 key 参数，直接把 parent 加入 highlightNodes Set（不再用 dict，
+        /// 避免 sticker.name 重复导致旧 outline 泄漏残留）。
+        private func addStickerOutline(to sticker: SCNNode) {
             let stickerSize: CGFloat = 0.82
             let lineThickness: CGFloat = 0.04
             let lineLength: CGFloat = stickerSize
             let outlineZ: Float = 0.02  // 在 sticker 平面外 0.02 处
 
             let parent = SCNNode()
-            parent.name = "highlight_outline_\(key)"
+            parent.name = "highlight_outline"
 
             // 4 条边：水平两条（上边 + 下边），垂直两条（左边 + 右边）
             // 用 SCNBox，长 = stickerSize，宽 = lineThickness，高 = lineThickness
@@ -1024,7 +1024,7 @@ struct Cube3DView: UIViewRepresentable {
             // parent 作为 sticker 子节点，local 坐标天然随 sticker 朝向（贴纸平面 = local XY 平面）。
             // 无需再设 eulerAngles，否则会与 sticker 的旋转叠加导致蓝框「立起来」。
             sticker.addChildNode(parent)
-            highlightNodes[key] = parent
+            highlightNodes.insert(parent)
         }
     }
 }
