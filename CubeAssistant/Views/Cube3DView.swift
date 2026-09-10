@@ -902,6 +902,8 @@ struct Cube3DView: UIViewRepresentable {
 
         /// 应用层高亮：清空旧高亮节点 → 给该层每个 sticker 加 4 条短边线（SCNBox）。
         /// 边线贴 sticker 平面外 0.01 处，constant lighting 蓝色实色，不挡原色。
+        /// 3 阶/2 阶/高阶统一「包整层切片」：外层选中后，除该面本身外，相邻 4 面的
+        /// 侧边一圈贴纸也一并加框，让用户看清「这一层」作为一个整体（与 3 阶一致）。
         func applyHighlight(layer: SelectedLayer?) {
             // 先清空（用 Set 遍历，直接 removeFromParentNode，确保没有 outline 泄漏）
             for node in highlightNodes { node.removeFromParentNode() }
@@ -909,23 +911,24 @@ struct Cube3DView: UIViewRepresentable {
             currentHighlightLayer = layer
             guard let layer = layer else { return }
 
-            // 高阶：按 normalFace 高亮该面 N² 个 stickers
+            // 高阶：按「轴 + 切片」收集该层整圈贴纸（该面 N² + 相邻 4 面侧面各 N）
             if currentOrder >= 4 {
-                let perFace = currentOrder * currentOrder
-                let fIdx = layer.normalFace.rawValue
-                for idx in (fIdx * perFace)..<((fIdx + 1) * perFace) {
-                    guard let sticker = cubeNStickers[idx] else { continue }
-                    addStickerOutline(to: sticker)
+                for (_, sticker) in cubeNStickers {
+                    if stickerBelongs(to: layer, position: sticker.position) {
+                        addStickerOutline(to: sticker)
+                    }
                 }
                 return
             }
 
-            // 2 阶：选中的 normalFace 对应的 4 个 stickers（每角块的 normalFace 面）
+            // 2 阶：按「轴 + 切片」收集该层 4 个角块的所有外露贴纸
             if currentOrder == 2 {
-                let dir = dirForNormalFace(layer.normalFace)
                 for (_, node) in cubelets2x2 {
-                    guard let sticker = node.childNode(withName: "sticker_\(dir.rawValue)", recursively: false) else { continue }
-                    addStickerOutline(to: sticker)
+                    if cubelet2x2Belongs(to: layer, position: node.position) {
+                        for sticker in node.childNodes where sticker.name?.hasPrefix("sticker_") == true {
+                            addStickerOutline(to: sticker)
+                        }
+                    }
                 }
                 return
             }
@@ -937,14 +940,33 @@ struct Cube3DView: UIViewRepresentable {
             }
         }
 
-        private func dirForNormalFace(_ face: Face) -> FaceDir {
-            switch face {
-            case .U: return .py
-            case .D: return .ny
-            case .L: return .nx
-            case .R: return .px
-            case .F: return .pz
-            case .B: return .nz
+        /// 判断一个高阶贴纸（世界坐标 position）是否属于选中的层切片。
+        /// 注意：该面本身的贴纸（法向朝外）坐标 = N/2 + 0.02（凸出 core 表面），
+        /// 而相邻面的侧面贴纸面内坐标 = ±halfGrid（=(N-1)/2）。两者不等，故用
+        /// `>= halfGrid`（正切片）／`<= -halfGrid`（负切片）统一判定「最外层边界」。
+        private func stickerBelongs(to layer: SelectedLayer, position: SCNVector3) -> Bool {
+            let halfGrid = Float(currentOrder - 1) / 2.0
+            let eps: Float = 0.01
+            switch layer.axis {
+            case .x:
+                return layer.slice > 0 ? position.x >= halfGrid - eps : position.x <= -halfGrid + eps
+            case .y:
+                return layer.slice > 0 ? position.y >= halfGrid - eps : position.y <= -halfGrid + eps
+            case .z:
+                return layer.slice > 0 ? position.z >= halfGrid - eps : position.z <= -halfGrid + eps
+            }
+        }
+
+        /// 判断一个 2 阶角块（世界坐标 position）是否属于选中的层切片（slice=±1 → ±0.5）。
+        private func cubelet2x2Belongs(to layer: SelectedLayer, position: SCNVector3) -> Bool {
+            let eps: Float = 0.01
+            switch layer.axis {
+            case .x:
+                return layer.slice > 0 ? position.x >= 0.5 - eps : position.x <= -0.5 + eps
+            case .y:
+                return layer.slice > 0 ? position.y >= 0.5 - eps : position.y <= -0.5 + eps
+            case .z:
+                return layer.slice > 0 ? position.z >= 0.5 - eps : position.z <= -0.5 + eps
             }
         }
 

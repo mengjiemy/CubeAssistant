@@ -366,6 +366,17 @@ struct HomeView: View {
     // MARK: 转层控件（选面 + 顺/逆时针，方向固定正确）
     private var turnControls: some View {
         VStack(spacing: 10) {
+            // 高阶（4~10）提示：当前仅支持最外层 6 面转动（内层 slice 后续版本接入）
+            if session.isHighOrder {
+                HStack(spacing: 4) {
+                    Image(systemName: "info.circle")
+                        .font(.caption2)
+                    Text("高阶暂支持最外层 6 面转动")
+                        .font(.caption2)
+                }
+                .foregroundColor(.secondary)
+            }
+
             // 6 面选层（选中蓝框高亮），两排：上左前 / 下右后，字母+中文对照公式
             HStack(spacing: 8) {
                 ForEach([Face.U, Face.L, Face.F], id: \.self) { f in
@@ -552,21 +563,33 @@ struct LearnView: View {
             }
 
             // 底部固定「求解」按钮（保持可见；按阶数走对应求解器）
+            // 高阶（4~10）暂未实现降阶自动求解：按钮置灰 + 提示，为后续 AI 求解预留入口。
             Button {
                 if !session.isSolving {
                     if session.isOrder2 {
                         session.solve2x2()
+                    } else if session.isHighOrder {
+                        session.message = "\(session.order) 阶暂不支持一键求解，先手动还原吧（AI 求解开发中）"
                     } else {
                         session.solve()
                     }
                 }
             } label: {
-                Label(session.isSolving ? "计算中…" : "求解", systemImage: "lightbulb.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(Capsule().fill(AppTheme.accent))
+                if session.isHighOrder && !session.isSolving {
+                    Label("求解（暂不支持高阶）", systemImage: "lightbulb.slash")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white.opacity(0.55))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Capsule().fill(Color.white.opacity(0.10)))
+                } else {
+                    Label(session.isSolving ? "计算中…" : "求解", systemImage: "lightbulb.fill")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Capsule().fill(AppTheme.accent))
+                }
             }
             .buttonStyle(.plain)
             .disabled(session.isSolving)
@@ -713,7 +736,7 @@ struct LearnView: View {
                 .padding(.vertical, 18)
             }
 
-            ForEach(courses, id: \.id) { stage in
+            ForEach(courses, id: \.idKey) { stage in
                 Button {
                     selectedCourse = stage
                 } label: {
@@ -775,6 +798,9 @@ struct LearnView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                // progress 是「读 UserDefaults 的计算属性」，SwiftUI 的 diff 只比 idKey 看不出变化；
+                // 用 progress 参与 identity，标记完成（progress 0→1）时强制重建该行 → 状态/颜色立即刷新。
+                .id("\(stage.idKey)-\(stage.progress)")
             }
         }
         .padding(16)
