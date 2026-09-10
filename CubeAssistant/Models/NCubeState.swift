@@ -106,6 +106,27 @@ struct NCubeState: Equatable {
         var c = self; c.apply(moveIndex); return c
     }
 
+    /// 应用一次「内层 slice」转动（当前仅 4 阶支持，depth=1 = 第二层）。
+    /// - face: 内层所属的面（U/R/F/D/L/B 六个，各对应其第二层）。
+    /// - turn: 1=CW, 2=180°, 3=CCW（CW 从该面法向看，与最外层 Move 方向一致）。
+    /// 表下标 = face.rawValue × 3 + turnOffset，与 MovePerms4Inner.table 对齐。
+    mutating func applySlice(face: Face, turn: Int) {
+        guard geometry.order == 4 else { return }  // 当前仅 4 阶实现内层 slice
+        let turnOffset: Int
+        switch turn {
+        case 1: turnOffset = 0
+        case 2: turnOffset = 1
+        case 3: turnOffset = 2
+        default: return
+        }
+        let moveIndex = face.rawValue * 3 + turnOffset
+        let table = MovePerms4Inner.table
+        guard moveIndex < table.count else { return }
+        let p = table[moveIndex]
+        let old = facelets
+        for i in 0..<facelets.count { facelets[i] = old[p[i]] }
+    }
+
     /// 随机打乱：做 count 次随机最外层转动（含偶发 180°），返回所用步骤便于回放/展示。
     mutating func scramble(count: Int) -> [Move] {
         var moves: [Move] = []

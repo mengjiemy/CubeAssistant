@@ -28,6 +28,7 @@
 		82FB966572669F3F33EDFEC3 /* MovePerms2.swift in Sources */ = {isa = PBXBuildFile; fileRef = 932795DC123D3BC7A25FB5CF /* MovePerms2.swift */; };
 		C6B6314E630A4B55B34667E6 /* MovePerms3.swift in Sources */ = {isa = PBXBuildFile; fileRef = 098B673AB47E71A446685862 /* MovePerms3.swift */; };
 		7399476C19833EB1029DAB9F /* MovePerms4.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8539A3C30164A5D204C27A4 /* MovePerms4.swift */; };
+		F1F03EADAFD34BE690A5C70B /* MovePerms4Inner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEC1BDB6074D4393A645C698 /* MovePerms4Inner.swift */; };
 		5AF2E1EBE8EBA1BE02AD09B1 /* MovePerms5.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94A26F29C2EC948382884183 /* MovePerms5.swift */; };
 		4847E6841D5B17C3EEACE715 /* MovePerms6.swift in Sources */ = {isa = PBXBuildFile; fileRef = B73455631FF1B1AA62DFF793 /* MovePerms6.swift */; };
 		72400815CE0862D671CB0A2B /* MovePerms7.swift in Sources */ = {isa = PBXBuildFile; fileRef = 207745AC208EB8DDF9D329E8 /* MovePerms7.swift */; };
@@ -59,6 +60,7 @@
 		932795DC123D3BC7A25FB5CF /* MovePerms2.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MovePerms2.swift; sourceTree = "<group>"; };
 		098B673AB47E71A446685862 /* MovePerms3.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MovePerms3.swift; sourceTree = "<group>"; };
 		C8539A3C30164A5D204C27A4 /* MovePerms4.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MovePerms4.swift; sourceTree = "<group>"; };
+		CEC1BDB6074D4393A645C698 /* MovePerms4Inner.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MovePerms4Inner.swift; sourceTree = "<group>"; };
 		94A26F29C2EC948382884183 /* MovePerms5.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MovePerms5.swift; sourceTree = "<group>"; };
 		B73455631FF1B1AA62DFF793 /* MovePerms6.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MovePerms6.swift; sourceTree = "<group>"; };
 		207745AC208EB8DDF9D329E8 /* MovePerms7.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = MovePerms7.swift; sourceTree = "<group>"; };
@@ -98,6 +100,7 @@
 				82FB966572669F3F33EDFEC3 /* MovePerms2.swift in Sources */,
 				C6B6314E630A4B55B34667E6 /* MovePerms3.swift in Sources */,
 				7399476C19833EB1029DAB9F /* MovePerms4.swift in Sources */,
+				F1F03EADAFD34BE690A5C70B /* MovePerms4Inner.swift in Sources */,
 				5AF2E1EBE8EBA1BE02AD09B1 /* MovePerms5.swift in Sources */,
 				4847E6841D5B17C3EEACE715 /* MovePerms6.swift in Sources */,
 				72400815CE0862D671CB0A2B /* MovePerms7.swift in Sources */,

@@ -181,3 +181,56 @@ public enum Face: Int, CaseIterable {
         ["U","R","F","D","L","B"][rawValue]
     }
 }
+
+/// 内层 slice 转动（高阶第二层，当前仅 4 阶支持）。
+/// 独立于 `Move`（Move.rawValue 0..26 已占满且语义固定为最外层/3阶中层）。
+/// face = 该内层所属的面（其第二层），turn 与 Move.turn 一致（1=CW/2=180/3=CCW）。
+public struct SliceTurn: Equatable, Hashable, Codable {
+    public let face: Face
+    public let turn: Int   // 1/2/3
+
+    public init(face: Face, turn: Int) {
+        self.face = face
+        self.turn = turn
+    }
+
+    /// 逆转动（undo 用）
+    public func inverted() -> SliceTurn {
+        switch turn {
+        case 1: return SliceTurn(face: face, turn: 3)
+        case 3: return SliceTurn(face: face, turn: 1)
+        default: return self   // 180° 逆 = 自身
+        }
+    }
+
+    /// 标准记号，如 "r", "u2", "f'"（小写表示内层）
+    public var notation: String {
+        let base = face.name.lowercased()
+        switch turn {
+        case 1: return base
+        case 2: return base + "2"
+        default: return base + "'"
+        }
+    }
+}
+
+/// undo 栈里的一步操作：要么是外层/3阶中层 Move，要么是 4 阶内层 SliceTurn。
+/// 用枚举统一存储，让 CubeModel 的 undoStack 能混存两种转动并正确逆回退。
+public enum TurnOp: Equatable, Hashable, Codable {
+    case move(Move)
+    case slice(SliceTurn)
+
+    public func inverted() -> TurnOp {
+        switch self {
+        case .move(let m): return .move(m.inverted())
+        case .slice(let s): return .slice(s.inverted())
+        }
+    }
+
+    public var notation: String {
+        switch self {
+        case .move(let m): return m.notation
+        case .slice(let s): return s.notation
+        }
+    }
+}

@@ -197,6 +197,9 @@ struct HomeView: View {
                             onTurnRequest: { move in
                                 _ = session.apply(move)
                             },
+                            onSliceTurnRequest: { slice in
+                                _ = session.applySlice(slice)
+                            },
                             gestureInteractionEnabled: session.turnMode == .gestures
                         )
                             .frame(height: 280)
@@ -366,12 +369,20 @@ struct HomeView: View {
     // MARK: 转层控件（选面 + 顺/逆时针，方向固定正确）
     private var turnControls: some View {
         VStack(spacing: 10) {
-            // 高阶（4~10）提示：当前仅支持最外层 6 面转动（内层 slice 后续版本接入）
-            if session.isHighOrder {
+            // 高阶提示：4 阶支持内层（手势点侧面选内层）；5~10 阶内层开发中（预览）
+            if session.order == 4 {
                 HStack(spacing: 4) {
-                    Image(systemName: "info.circle")
+                    Image(systemName: "hand.tap")
                         .font(.caption2)
-                    Text("高阶暂支持最外层 6 面转动")
+                    Text("4 阶支持内层：手势模式点侧面选内层转动")
+                        .font(.caption2)
+                }
+                .foregroundColor(.secondary)
+            } else if session.isHighOrder {
+                HStack(spacing: 4) {
+                    Image(systemName: "sparkles")
+                        .font(.caption2)
+                    Text("\(session.order) 阶内层转动开发中 · 敬请期待（当前可转最外层）")
                         .font(.caption2)
                 }
                 .foregroundColor(.secondary)

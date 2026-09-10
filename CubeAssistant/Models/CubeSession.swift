@@ -189,6 +189,18 @@ final class CubeSession: NSObject, ObservableObject {
         return solved
     }
 
+    /// 施加一步「4 阶内层」转动（SliceTurn）。
+    @discardableResult
+    func applySlice(_ slice: SliceTurn) -> Bool {
+        var m = model
+        let solved = m.applySlice(slice)
+        model = m
+        if solved && m.identity == .virtual {
+            finalizeSolve()
+        }
+        return solved
+    }
+
     /// 连续回退一步（一路可退到 checkpoint）
     @discardableResult
     func undo() -> Bool {

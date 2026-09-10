@@ -31,6 +31,8 @@ struct Cube3DView: UIViewRepresentable {
     var onLayerDeselected: (() -> Void)? = nil
     /// 手势交互回调：滑动触发一次转动请求。
     var onTurnRequest: ((Move) -> Void)? = nil
+    /// 手势交互回调：滑动触发一次「内层」转动请求（4 阶内层，传 SliceTurn）。
+    var onSliceTurnRequest: ((SliceTurn) -> Void)? = nil
 
     /// 是否启用「手势模式」交互：true = 点击选层 + 选中后锁定相机 + 滑动转层；
     /// false = 按钮模式（点击/滑动交给按钮，选层只画蓝框，相机始终可旋转）。
@@ -43,6 +45,7 @@ struct Cube3DView: UIViewRepresentable {
          onLayerSelected: ((SelectedLayer) -> Void)? = nil,
          onLayerDeselected: (() -> Void)? = nil,
          onTurnRequest: ((Move) -> Void)? = nil,
+         onSliceTurnRequest: ((SliceTurn) -> Void)? = nil,
          gestureInteractionEnabled: Bool = false) {
         self.session = session
         self.overrideFacelets = overrideFacelets
@@ -51,6 +54,7 @@ struct Cube3DView: UIViewRepresentable {
         self.onLayerSelected = onLayerSelected
         self.onLayerDeselected = onLayerDeselected
         self.onTurnRequest = onTurnRequest
+        self.onSliceTurnRequest = onSliceTurnRequest
         self.gestureInteractionEnabled = gestureInteractionEnabled
     }
 
@@ -60,6 +64,8 @@ struct Cube3DView: UIViewRepresentable {
         let axis: Axis
         let slice: Int       // -1 (L/D/B), 0 (M/E/S 中层), +1 (R/U/F)
         let normalFace: Face // 命中的外层 face（用于滑动方向观察基准；2 阶/高阶退化用）
+        /// 层深度：0 = 最外层，1 = 内层（第二层，仅 4 阶）。默认 0。
+        let depth: Int
 
         /// 由外层 face 构造（高阶/按钮模式用）。
         init(outer face: Face) {
@@ -73,12 +79,27 @@ struct Cube3DView: UIViewRepresentable {
             }
         }
 
-        /// 由 (axis, slice, normalFace) 构造
-        init(axis: Axis, slice: Int, normalFace: Face) {
+        /// 由 (axis, slice, normalFace) 构造（depth 默认 0 = 最外层）
+        init(axis: Axis, slice: Int, normalFace: Face, depth: Int = 0) {
             self.axis = axis
             self.slice = slice
             self.normalFace = normalFace
+            self.depth = depth
         }
+
+        /// 内层 slice 对应的「标准 face」（depth==1 时有效），供 SliceTurn 使用。
+        /// 内层 face = 该内层轴正向对应的面（x轴→R, y轴→U, z轴→F），与 SliceTurn.face 语义对齐。
+        /// 即：内层转动方向「从该 face 法向看顺时针」。
+        var innerFace: Face {
+            switch axis {
+            case .x: return slice > 0 ? .R : .L
+            case .y: return slice > 0 ? .U : .D
+            case .z: return slice > 0 ? .F : .B
+            }
+        }
+
+        /// 是否内层（4 阶第二层）
+        var isInner: Bool { depth >= 1 }
 
         /// 该层对应的「基础 move」（CW 90°）。
         /// 例如：x 轴 +1 层 → R，x 轴 0 层（中层）→ M，y 轴 +1 层 → U
@@ -144,6 +165,7 @@ struct Cube3DView: UIViewRepresentable {
         co.onLayerSelected = onLayerSelected
         co.onLayerDeselected = onLayerDeselected
         co.onTurnRequest = onTurnRequest
+        co.onSliceTurnRequest = onSliceTurnRequest
         let initial = resolveFacelets()
         if order == 2 {
             co.currentOrder = 2
@@ -293,6 +315,7 @@ struct Cube3DView: UIViewRepresentable {
         var onLayerSelected: ((SelectedLayer) -> Void)?
         var onLayerDeselected: (() -> Void)?
         var onTurnRequest: ((Move) -> Void)?
+        var onSliceTurnRequest: ((SliceTurn) -> Void)?
         // 手势
         weak var tapGesture: UITapGestureRecognizer?
         weak var panGesture: UIPanGestureRecognizer?
@@ -395,8 +418,14 @@ struct Cube3DView: UIViewRepresentable {
                 let dx = translation.x
                 let dy = translation.y
                 guard max(abs(dx), abs(dy)) > 24 else { return }
-                guard let move = moveForSwipe(startLayer: start, dx: dx, dy: dy) else { return }
-                onTurnRequest?(move)
+                // 内层（4 阶第二层）→ 走 slice 转动；否则走外层/中层 Move
+                if start.isInner {
+                    guard let slice = sliceForSwipe(startLayer: start, dx: dx, dy: dy) else { return }
+                    onSliceTurnRequest?(slice)
+                } else {
+                    guard let move = moveForSwipe(startLayer: start, dx: dx, dy: dy) else { return }
+                    onTurnRequest?(move)
+                }
             default:
                 break
             }
@@ -802,6 +831,23 @@ struct Cube3DView: UIViewRepresentable {
             }
         }
 
+        /// face → 轴（与 SelectedLayer(outer:) 一致）
+        private func axisFor(face: Face) -> SelectedLayer.Axis {
+            switch face {
+            case .U, .D: return .y
+            case .R, .L: return .x
+            case .F, .B: return .z
+            }
+        }
+
+        /// face → 切片符号（+1 正向面，-1 负向面）
+        private func sliceFor(face: Face) -> Int {
+            switch face {
+            case .U, .R, .F: return 1
+            case .D, .L, .B: return -1
+            }
+        }
+
         /// 解析 cubelet 名 "cubelet_x_y_z" 或 "cubelet2_+5_-5_+5" → (x,y,z)
         private func parseCubeletCoord(from name: String) -> (Int, Int, Int)? {
             let parts = name.split(separator: "_")
@@ -824,7 +870,45 @@ struct Cube3DView: UIViewRepresentable {
         private func layerForHit(_ hit: HitInfo) -> SelectedLayer {
             let normalFace = hit.face
 
-            // 高阶（无 per-cubelet coord）：只能选外层 6 个
+            // 4 阶：支持内层（第二层）。命中贴纸后，用其在「垂直于法向的两轴」上的坐标
+            // 判断是否落在内层（±0.5），并据此确定内层轴与符号。
+            if currentOrder == 4 {
+                let pos = hit.stickerNode.position
+                let eps: Float = 0.01
+                // 命中面法向决定「看哪两个轴」
+                switch normalFace {
+                case .U, .D:   // 法向 y，看 x / z
+                    if abs(abs(pos.x) - 0.5) < eps {
+                        let sign = pos.x > 0 ? 1 : -1
+                        return SelectedLayer(axis: .x, slice: sign, normalFace: normalFace, depth: 1)
+                    }
+                    if abs(abs(pos.z) - 0.5) < eps {
+                        let sign = pos.z > 0 ? 1 : -1
+                        return SelectedLayer(axis: .z, slice: sign, normalFace: normalFace, depth: 1)
+                    }
+                case .R, .L:   // 法向 x，看 y / z
+                    if abs(abs(pos.y) - 0.5) < eps {
+                        let sign = pos.y > 0 ? 1 : -1
+                        return SelectedLayer(axis: .y, slice: sign, normalFace: normalFace, depth: 1)
+                    }
+                    if abs(abs(pos.z) - 0.5) < eps {
+                        let sign = pos.z > 0 ? 1 : -1
+                        return SelectedLayer(axis: .z, slice: sign, normalFace: normalFace, depth: 1)
+                    }
+                case .F, .B:   // 法向 z，看 x / y
+                    if abs(abs(pos.x) - 0.5) < eps {
+                        let sign = pos.x > 0 ? 1 : -1
+                        return SelectedLayer(axis: .x, slice: sign, normalFace: normalFace, depth: 1)
+                    }
+                    if abs(abs(pos.y) - 0.5) < eps {
+                        let sign = pos.y > 0 ? 1 : -1
+                        return SelectedLayer(axis: .y, slice: sign, normalFace: normalFace, depth: 1)
+                    }
+                }
+                return SelectedLayer(outer: normalFace)
+            }
+
+            // 高阶（5-10，无内层）：只能选外层 6 个
             if currentOrder >= 4 {
                 return SelectedLayer(outer: normalFace)
             }
@@ -877,6 +961,23 @@ struct Cube3DView: UIViewRepresentable {
             let sameDirection = (startLayer.normalFace == baseFace)
             let effectiveClockwise = sameDirection ? clockwise : !clockwise
             return effectiveClockwise ? base : base.inverted()
+        }
+
+        /// 内层滑动手势 → SliceTurn。方向翻转逻辑与 moveForSwipe 一致：
+        /// 内层的「标准顺时针」从 innerFace（该轴正向面）看；若命中面 normalFace ≠ innerFace，
+        /// 则「从 normalFace 看顺时针」=「从 innerFace 看逆时针」，需翻转。
+        private func sliceForSwipe(startLayer: SelectedLayer, dx: CGFloat, dy: CGFloat) -> SliceTurn? {
+            let horizontal = abs(dx) >= abs(dy)
+            let clockwise: Bool
+            if horizontal {
+                clockwise = dx > 0
+            } else {
+                clockwise = dy < 0
+            }
+            let innerFace = startLayer.innerFace
+            let sameDirection = (startLayer.normalFace == innerFace)
+            let effectiveClockwise = sameDirection ? clockwise : !clockwise
+            return SliceTurn(face: innerFace, turn: effectiveClockwise ? 1 : 3)
         }
 
         // MARK: - UIGestureRecognizerDelegate
@@ -941,12 +1042,23 @@ struct Cube3DView: UIViewRepresentable {
         }
 
         /// 判断一个高阶贴纸（世界坐标 position）是否属于选中的层切片。
-        /// 注意：该面本身的贴纸（法向朝外）坐标 = N/2 + 0.02（凸出 core 表面），
-        /// 而相邻面的侧面贴纸面内坐标 = ±halfGrid（=(N-1)/2）。两者不等，故用
-        /// `>= halfGrid`（正切片）／`<= -halfGrid`（负切片）统一判定「最外层边界」。
+        /// - 外层（depth=0）：最外层边界，该面贴纸坐标 = N/2+0.02（凸出 core），
+        ///   相邻面侧面贴纸 = ±halfGrid（=(N-1)/2）。两者不等，故用 `>= halfGrid`/`<= -halfGrid`。
+        /// - 内层（depth=1，4 阶）：第二层，坐标落在 ±0.5（4 阶各列坐标 ±1.5/±0.5）。
         private func stickerBelongs(to layer: SelectedLayer, position: SCNVector3) -> Bool {
-            let halfGrid = Float(currentOrder - 1) / 2.0
             let eps: Float = 0.01
+            if layer.isInner {
+                // 内层（4 阶第二层）：该轴坐标 ≈ ±0.5
+                switch layer.axis {
+                case .x:
+                    return layer.slice > 0 ? abs(position.x - 0.5) < eps : abs(position.x + 0.5) < eps
+                case .y:
+                    return layer.slice > 0 ? abs(position.y - 0.5) < eps : abs(position.y + 0.5) < eps
+                case .z:
+                    return layer.slice > 0 ? abs(position.z - 0.5) < eps : abs(position.z + 0.5) < eps
+                }
+            }
+            let halfGrid = Float(currentOrder - 1) / 2.0
             switch layer.axis {
             case .x:
                 return layer.slice > 0 ? position.x >= halfGrid - eps : position.x <= -halfGrid + eps
